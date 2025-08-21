@@ -1,0 +1,205 @@
+/* Custom Color Scheme Implementation */
+:root {
+  --bg-main: #fafafa;
+  --bg-warm: #fdf6ec;
+  --primary-blue: #3b82f6;
+  --primary-teal: #14b8a6;
+  --primary-green: #22c55e;
+  --secondary-orange: #f59e0b;
+  --secondary-purple: #8b5cf6;
+  --secondary-slate: #64748b;
+  --text-dark: #1f2937;
+  --text-muted: #374151;
+}
+
+body {
+  background-color: var(--bg-main);
+  color: var(--text-dark);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Navigation Styling */
+.navbar {
+  background-color: var(--bg-warm) !important;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.navbar-brand {
+  color: var(--primary-blue) !important;
+  font-size: 1.5rem;
+}
+
+.nav-link {
+  color: var(--text-dark) !important;
+  font-weight: 500;
+}
+
+.nav-link:hover {
+  color: var(--primary-blue) !important;
+}
+
+/* Hero Section */
+.hero-section {
+  background: linear-gradient(135deg, var(--bg-main) 0%, var(--bg-warm) 100%);
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+}
+
+.hero-image {
+  background-color: rgba(59, 130, 246, 0.1);
+  border-radius: 20px;
+  border: 2px dashed var(--primary-blue);
+}
+
+/* Button Styling */
+.btn-primary {
+  background-color: var(--primary-blue);
+  border-color: var(--primary-blue);
+}
+
+.btn-primary:hover {
+  background-color: #2563eb;
+  border-color: #2563eb;
+}
+
+.btn-outline-primary {
+  color: var(--primary-blue);
+  border-color: var(--primary-blue);
+}
+
+.btn-outline-primary:hover {
+  background-color: var(--primary-blue);
+  border-color: var(--primary-blue);
+}
+
+/* Stats Section */
+.stats-section {
+  background-color: #f8fafc !important;
+}
+
+.stat-card h3 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Category Cards */
+.category-card {
+  background-color: white;
+  border: 1px solid #e5e7eb;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.category-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1) !important;
+  border-color: var(--primary-blue);
+}
+
+/* Custom Badge Colors */
+.bg-purple {
+  background-color: var(--secondary-purple) !important;
+}
+
+.text-purple {
+  color: var(--secondary-purple) !important;
+}
+
+.bg-success {
+  background-color: var(--primary-green) !important;
+}
+
+.bg-warning {
+  background-color: var(--secondary-orange) !important;
+}
+
+.bg-info {
+  background-color: var(--primary-teal) !important;
+}
+
+.bg-secondary {
+  background-color: var(--secondary-slate) !important;
+}
+
+/* Announcement Cards */
+.announcement-card {
+  border: 1px solid #e5e7eb;
+  transition: all 0.3s ease;
+}
+
+.announcement-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Text Colors */
+.text-dark {
+  color: var(--text-dark) !important;
+}
+
+.text-muted {
+  color: var(--text-muted) !important;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .hero-section {
+    min-height: 50vh;
+    text-align: center;
+  }
+
+  .display-4 {
+    font-size: 2rem;
+  }
+
+  .hero-image {
+    margin-top: 2rem;
+  }
+
+  .stat-card h3 {
+    font-size: 2rem;
+  }
+
+  .category-card {
+    margin-bottom: 1rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .btn-lg {
+    font-size: 1rem;
+    padding: 0.75rem 1.5rem;
+  }
+
+  .display-4 {
+    font-size: 1.75rem;
+  }
+
+  .lead {
+    font-size: 1rem;
+  }
+}
+
+/* Modal Styling */
+.modal-content {
+  border: none;
+  border-radius: 15px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+.modal-header {
+  background-color: var(--bg-warm);
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 15px 15px 0 0;
+}
+
+.form-control:focus {
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+}
+
+/* Footer */
+footer {
+  background-color: var(--text-dark) !important;
+}
