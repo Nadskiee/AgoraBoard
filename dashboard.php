@@ -1,353 +1,174 @@
 <?php
 session_start();
+require_once 'db_connect.php';
 
-// --- Helper Function ---
-function sane($s) {
+// 🔐 Auth check
+if (!isset($_SESSION['currentUser'])) {
+    header("Location: login.php");
+    exit;
+}
+$currentUser = $_SESSION['currentUser'];
+$userId = $currentUser['id'] ?? null;
+
+// 🧼 Helper
+function sane($s)
+{
     return htmlspecialchars(trim($s), ENT_QUOTES, 'UTF-8');
 }
 
-// --- Initialize or Load Logged-in User ---
-// IMPORTANT: The user data is now stored in the session to allow edits on profile.php
-if (!isset($_SESSION['currentUser'])) {
-    // Hardcode for initial demo load
-    $_SESSION['currentUser'] = [
-        "name" => "Sarah Johnson",
-        "role" => "Member",
-        "initial" => "S",
-        "email" => "sarah.johnson@example.com" // Added email for profile page
-    ];
-}
-$currentUser = $_SESSION['currentUser'];
-
-
-// --- Seed sample posts & comments if the session is empty or missing data for the current user ---
-if (!isset($_SESSION['posts'])) {
-    $_SESSION['posts'] = [
-        [
-            "user" => "Sarah Johnson",
-            "role" => "Member",
-            "time" => "about 3 hours ago",
-            "content" => "Welcome to the new community board! Let's keep it friendly and helpful.",
-            "tag" => "General",
-            "likes" => 1,
-            "likedBy" => [$currentUser['name']],
-            "comments" => 1,
-            "shares" => 0,
-            "bookmarkedBy" => [$currentUser['name']]
-        ],
-        [
-            "user" => "Maria",
-            "role" => "Community Member",
-            "time" => "yesterday",
-            "content" => "Nawala akong selpon sa plaza. Kung kinsa makakita, palihug ko ug uli 🙏 (I lost my cellphone at the plaza. If anyone finds it, please return it 🙏)",
-            "tag" => "Lost & Found",
-            "likes" => 2,
-            "likedBy" => [],
-            "comments" => 1,
-            "shares" => 0,
-            "bookmarkedBy" => []
-        ],
-        [
-            "user" => "John Doe",
-            "role" => "Community Member",
-            "time" => "5 hours ago",
-            "content" => "Need volunteers for the park clean-up this Saturday!",
-            "tag" => "Volunteer",
-            "likes" => 5,
-            "likedBy" => [],
-            "comments" => 2,
-            "shares" => 1,
-            "bookmarkedBy" => []
-        ],
-        [
-            "user" => "Council Member",
-            "role" => "Admin",
-            "time" => "1 hour ago",
-            "content" => "Road closure on Elm Street starting tomorrow due to emergency repairs.",
-            "tag" => "Alert",
-            "likes" => 10,
-            "likedBy" => [],
-            "comments" => 4,
-            "shares" => 5,
-            "bookmarkedBy" => []
-        ],
-        [
-            "user" => "Jane Smith",
-            "role" => "Community Member",
-            "time" => "2 days ago",
-            "content" => "Looking for a part-time babysitter near the school. Must have references.",
-            "tag" => "Job",
-            "likes" => 3,
-            "likedBy" => [],
-            "comments" => 1,
-            "shares" => 0,
-            "bookmarkedBy" => []
-        ],
-    ];
-}
-
-if (!isset($_SESSION['comments'])) {
-    $_SESSION['comments'] = [
-        0 => [
-            ["user" => "John Doe", "role" => "Community Member", "content" => "Great initiative!", "time" => "2 hours ago"]
-        ],
-        1 => [
-            ["user" => "John Doe", "role" => "Community Member", "content" => "I saw a phone near the tulips. I'll keep an eye.", "time" => "15 hours ago"]
-        ],
-        2 => [
-            ["user" => "Maria", "role" => "Community Member", "content" => "I can help for a few hours!", "time" => "1 hour ago"],
-            ["user" => "John Doe", "role" => "Community Member", "content" => "I'm in too!", "time" => "30 minutes ago"] // Added another comment
-        ],
-        3 => [
-            ["user" => "Sarah Johnson", "role" => "Member", "content" => "Thanks for the alert, Admin!", "time" => "5 minutes ago"] // Current user comment
-        ],
-        4 => [
-            ["user" => "Sarah Johnson", "role" => "Community Member", "content" => "I know someone, I'll send you a message!", "time" => "30 minutes ago"]
-        ],
-    ];
-}
-
-// --- Handle POST Actions (Like, Bookmark, Post, Delete/Edit Post, Add/Delete/Edit Comment) ---
-
-// Like post
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['like_post_index'])) {
-    $idx = intval($_POST['like_post_index']);
-    if (isset($_SESSION['posts'][$idx])) {
-        $likedByIndex = array_search($currentUser['name'], $_SESSION['posts'][$idx]['likedBy'] ?? []);
-        if ($likedByIndex !== false) {
-            unset($_SESSION['posts'][$idx]['likedBy'][$likedByIndex]);
-            $_SESSION['posts'][$idx]['likes']--;
-        } else {
-            $_SESSION['posts'][$idx]['likedBy'][] = $currentUser['name'];
-            $_SESSION['posts'][$idx]['likes']++;
-        }
-    }
-    header("Location: " . $_SERVER['PHP_SELF'] . "#post-" . $idx);
-    exit;
-}
-
-// Bookmark post
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bookmark_post_index'])) {
-    $idx = intval($_POST['bookmark_post_index']);
-    if (isset($_SESSION['posts'][$idx])) {
-        $bookmarkedByIndex = array_search($currentUser['name'], $_SESSION['posts'][$idx]['bookmarkedBy'] ?? []);
-        if ($bookmarkedByIndex !== false) {
-            unset($_SESSION['posts'][$idx]['bookmarkedBy'][$bookmarkedByIndex]);
-        } else {
-            $_SESSION['posts'][$idx]['bookmarkedBy'][] = $currentUser['name'];
-        }
-        $_SESSION['posts'][$idx]['bookmarkedBy'] = array_values($_SESSION['posts'][$idx]['bookmarkedBy']);
-    }
-    header("Location: " . $_SERVER['PHP_SELF'] . "#post-" . $idx);
-    exit;
-}
-
-// Create post
+// 📝 Handle post creation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_post_content'])) {
     $content = sane($_POST['new_post_content']);
-    $tag = sane($_POST['new_post_tag'] ?? 'General');
-    if (!empty($content)) {
-        array_unshift($_SESSION['posts'], [
-            "user" => $currentUser['name'], "role" => $currentUser['role'], "time" => "Just now",
-            "content" => $content, "tag" => $tag, "likes" => 0, "likedBy" => [],
-            "comments" => 0, "shares" => 0, "bookmarkedBy" => []
-        ]);
-        // Shift comment indices to make room for the new post at index 0
-        $newComments = [0 => []];
-        foreach($_SESSION['comments'] as $key => $val) { $newComments[$key + 1] = $val; }
-        $_SESSION['comments'] = $newComments;
-    }
-    header("Location: " . $_SERVER['PHP_SELF']);
+    $category = sane($_POST['new_post_category'] ?? 'General');
+    $title = sane($_POST['new_post_title'] ?? '');
+    $stmt = $pdo->prepare("INSERT INTO community_posts (title, content, category, created_by) VALUES (?, ?, ?, ?)");
+    $stmt->execute([$title, $content, $category, $userId]);
+    header("Location: dashboard.php");
     exit;
 }
 
-// Delete post
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_post_index'])) {
-    $idx = intval($_POST['delete_post_index']);
-    if (isset($_SESSION['posts'][$idx]) && $_SESSION['posts'][$idx]['user'] === $currentUser['name']) {
-        unset($_SESSION['posts'][$idx]);
-        unset($_SESSION['comments'][$idx]);
-        // Re-index arrays to prevent gaps
-        $_SESSION['posts'] = array_values($_SESSION['posts']);
-        $_SESSION['comments'] = array_values($_SESSION['comments']);
-    }
-    header("Location: " . $_SERVER['PHP_SELF']);
-    exit;
-}
+// ✏️ Edit post (AJAX only)
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    isset($_POST['edit_post_index'], $_POST['edit_post_content']) &&
+    strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest'
+) {
+    header('Content-Type: application/json');
+    $postId = (int)$_POST['edit_post_index'];
+    $newContent = trim($_POST['edit_post_content']);
 
-// Edit post
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_post_index'], $_POST['edit_post_content'])) {
-    $idx = intval($_POST['edit_post_index']);
-    $content = sane($_POST['edit_post_content']);
-    if (isset($_SESSION['posts'][$idx]) && $_SESSION['posts'][$idx]['user'] === $currentUser['name']) {
-        $_SESSION['posts'][$idx]['content'] = $content;
-        $_SESSION['posts'][$idx]['time'] = 'Just now (edited)';
-    }
-    header("Location: " . $_SERVER['PHP_SELF'] . "#post-" . $idx);
-    exit;
-}
+    try {
+        $stmt = $pdo->prepare("UPDATE community_posts SET content=? WHERE id=? AND created_by=?");
+        $stmt->execute([$newContent, $postId, $userId]);
 
-// Add comment
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['comment_post_index'], $_POST['comment_text'])) {
-    $p_idx = intval($_POST['comment_post_index']);
-    $txt = sane($_POST['comment_text']);
-    if (isset($_SESSION['posts'][$p_idx]) && !empty($txt)) {
-        if (!isset($_SESSION['comments'][$p_idx])) $_SESSION['comments'][$p_idx] = [];
-        $_SESSION['comments'][$p_idx][] = ["user" => $currentUser['name'], "role" => $currentUser['role'], "content" => $txt, "time" => "Just now"];
-        $_SESSION['posts'][$p_idx]['comments']++;
-    }
-    header("Location: " . $_SERVER['PHP_SELF'] . "#post-" . $p_idx);
-    exit;
-}
-
-// Delete comment (NEW)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_comment_post'], $_POST['delete_comment_index'])) {
-    $p_idx = intval($_POST['delete_comment_post']);
-    $c_idx = intval($_POST['delete_comment_index']);
-    if (isset($_SESSION['comments'][$p_idx][$c_idx]) && $_SESSION['comments'][$p_idx][$c_idx]['user'] === $currentUser['name']) {
-        unset($_SESSION['comments'][$p_idx][$c_idx]);
-        $_SESSION['comments'][$p_idx] = array_values($_SESSION['comments'][$p_idx]);
-        if (isset($_SESSION['posts'][$p_idx])) {
-            $_SESSION['posts'][$p_idx]['comments'] = max(0, $_SESSION['posts'][$p_idx]['comments'] - 1);
+        if ($stmt->rowCount() > 0) {
+            echo json_encode(['success' => true, 'message' => 'Post updated']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Unauthorized or no changes']);
         }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
-    header("Location: " . $_SERVER['PHP_SELF'] . "#post-" . $p_idx);
+
+    exit; // prevent page HTML from leaking into AJAX response
+}
+
+
+// 🗑️ Delete post
+if (isset($_POST['delete_post_id'])) {
+    $postId = $_POST['delete_post_id'];
+
+    // only allow the user who made the post to delete it
+    $stmt = $pdo->prepare("DELETE FROM community_posts WHERE id = ? AND created_by = ?");
+    $stmt->execute([$postId, $userId]);
+}
+
+
+// ❤️ Like post (AJAX only)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['like_post_id']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest') {
+    $postId = (int)$_POST['like_post_id'];
+
+    $check = $pdo->prepare("SELECT id FROM likes WHERE user_id=? AND post_type='community' AND post_id=?");
+    $check->execute([$userId, $postId]);
+
+    if ($check->rowCount() > 0) {
+        $pdo->prepare("DELETE FROM likes WHERE user_id=? AND post_type='community' AND post_id=?")->execute([$userId, $postId]);
+        $liked = false;
+    } else {
+        $pdo->prepare("INSERT INTO likes (user_id, post_type, post_id) VALUES (?, 'community', ?)")->execute([$userId, $postId]);
+        $liked = true;
+    }
+
+    $count = $pdo->prepare("SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=?");
+    $count->execute([$postId]);
+    $totalLikes = $count->fetchColumn();
+
+    echo json_encode([
+        'success' => true,
+        'liked' => $liked,
+        'total_likes' => $totalLikes
+    ]);
     exit;
 }
 
-// Edit comment (NEW)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_comment_post'], $_POST['edit_comment_index'], $_POST['edit_comment_text'])) {
-    $p_idx = intval($_POST['edit_comment_post']);
-    $c_idx = intval($_POST['edit_comment_index']);
-    $txt = sane($_POST['edit_comment_text']);
-    if (isset($_SESSION['comments'][$p_idx][$c_idx]) && $_SESSION['comments'][$p_idx][$c_idx]['user'] === $currentUser['name'] && !empty($txt)) {
-        $_SESSION['comments'][$p_idx][$c_idx]['content'] = $txt;
-        $_SESSION['comments'][$p_idx][$c_idx]['time'] = 'Just now (edited)';
-    }
-    header("Location: " . $_SERVER['PHP_SELF'] . "#post-" . $p_idx);
+// 🗑️ Delete comment (AJAX only)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_comment_id']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest') {
+    $commentId = (int)$_POST['delete_comment_id'];
+    $pdo->prepare("DELETE FROM comments WHERE id=? AND user_id=?")->execute([$commentId, $userId]);
+    echo json_encode(['success' => true]);
     exit;
 }
 
-// --- Hardcoded events for right panel ---
-$events = [
-    ["title" => "Community BBQ & Family Fun Day", "category" => "Social", "date" => "Saturday, Dec 23", "time" => "12:00 - 6:00 PM", "location" => "Central Park Pavilion", "attendees" => 47],
-    ["title" => "Holiday Light Tour", "category" => "Holiday", "date" => "Sunday, Dec 24", "time" => "7:00 - 9:00 PM", "location" => "Neighborhood Streets", "attendees" => 23],
-    ["title" => "New Year's Eve Celebration", "category" => "Celebration", "date" => "Sunday, Dec 31", "time" => "8:00 PM - 12:30 AM", "location" => "Community Center", "attendees" => 120],
-];
+// ✏️ Edit comment (AJAX only)
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    isset($_POST['comment_id'], $_POST['comment_text']) &&
+    strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest'
+) {
 
-// Helper function to get tag CSS class
-function getTagClass($tag) {
-    $tag = strtolower(str_replace([' ', '&'], ['-', ''], $tag));
-    return "tag-" . $tag;
+    $commentId = (int)$_POST['comment_id'];
+    $text = sane($_POST['comment_text']);
+
+    $stmt = $pdo->prepare("UPDATE comments SET content=? WHERE id=? AND user_id=?");
+    $stmt->execute([$text, $commentId, $userId]);
+
+    echo json_encode(['success' => true]);
+    exit;
 }
 
+
+// 📥 Fetch posts
+$stmt = $pdo->query("
+    SELECT p.*, u.first_name, u.last_name, u.role,
+        (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id) AS total_likes,
+        (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id) AS total_comments,
+        (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id) AS total_bookmarks
+    FROM community_posts p
+    LEFT JOIN users u ON p.created_by = u.id
+    ORDER BY p.is_pinned DESC, p.created_at DESC
+");
+$posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// 💬 Fetch comments per post
+function getComments($pdo, $postId)
+{
+    $q = $pdo->prepare("
+        SELECT c.*, u.first_name, u.last_name 
+        FROM comments c 
+        LEFT JOIN users u ON c.user_id = u.id 
+        WHERE c.post_type='community' AND c.post_id=? 
+        ORDER BY c.created_at ASC
+    ");
+    $q->execute([$postId]);
+    return $q->fetchAll(PDO::FETCH_ASSOC);
+}
 ?>
+
 <!doctype html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AgoraBoard - Home</title>
+    <link rel="stylesheet" href="assets/dashboard.css?v=<?php echo time(); ?>">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
-    <style>
-        :root {
-            --sage: #10b981; /* Primary Green */
-            --sage-light: #059669; /* Slightly darker/Emerald-600 for contrast/accents */
-            --sage-dark: #047857;
-            --cream: #F5F5F0; --bg: #FDFDFC; --muted-text: #6c757d;
-            --dark-text: #3B3A36; --border-color: #EAE8E3; --sidebar-width: 240px;
-        }
-        body { background-color: var(--bg); color: var(--dark-text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
-        .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: var(--sidebar-width); background: var(--sage); color: #fff; padding: 20px; display: flex; flex-direction: column; }
-        .sidebar h4 { font-weight: 700; letter-spacing: 0.5px; padding-left: 10px; }
-        .sidebar .nav-link { color: #E6E3D3; font-weight: 500; padding: 12px 15px; border-radius: 8px; margin-bottom: 4px; display: flex; align-items: center; gap: 12px; }
-        .sidebar .nav-link.active, .sidebar .nav-link:hover { background: rgba(0, 0, 0, 0.1); color: #fff; }
-        .sidebar .nav-link i { font-size: 1.1rem; }
-        .main-content { margin-left: var(--sidebar-width); padding: 25px 30px; }
-        .main-feed { flex: 1; } .right-panel { width: 320px; flex-shrink: 0; }
-        .filter-button-group .btn { border-radius: 6px; font-weight: 500; background-color: #E9ECEF; border: 1px solid #DEE2E6; color: var(--muted-text); }
-        .composer { background: #fff; border: 1px solid var(--border-color); border-radius: 12px; padding: 15px; }
-        .composer textarea { border: none; resize: none; width: 100%; background: transparent; outline: none; box-shadow: none; font-size: 1.1rem; }
-        .composer .btn-post { background-color: var(--sage); color: #fff; font-weight: 600; border-radius: 50px; padding: 8px 25px; }
-        .composer .btn-post:hover { background-color: var(--sage-dark); }
-        .composer .tag-btn { font-size: 0.8rem; border-radius: 50px; }
-        .post-card { background: #fff; border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; }
-        .avatar { width: 45px; height: 45px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: #fff; background-color: var(--sage); font-weight: 700; font-size: 1.2rem; flex-shrink: 0; }
-        
-        /* New Tag Color Styles */
-        .post-card .badge { font-size: 0.7rem; font-weight: 600; padding: 5px 10px; border-radius: 6px; color: #fff !important; }
 
-        .tag-general { background-color: #3B82F6 !important; } /* Blue */
-        .tag-lost-found { background-color: #F97316 !important; } /* Orange */
-        .tag-event { background-color: #10B981 !important; } /* Emerald Green */
-        .tag-alert { background-color: #DC2626 !important; } /* Red */
-        .tag-volunteer { background-color: #A855F7 !important; } /* Purple */
-        .tag-job { background-color: #06B6D4 !important; } /* Cyan */
-
-        .btn-as-link { background: none; border: none; padding: 4px 6px; margin: 0; cursor: pointer; color: var(--muted-text); border-radius: 5px; }
-        .btn-as-link:hover { background-color: #f0f0f0; }
-        .interaction-stats { color: var(--muted-text); font-size: 0.9rem; font-weight: 500; }
-        .interaction-stats button { background: none; border: none; padding: 0; color: var(--muted-text); }
-        .interaction-stats button.liked { color: #dc3545; }
-        .view-comments-toggle { color: var(--muted-text); font-weight: 500; text-decoration: none; font-size: 0.9rem; cursor: pointer; }  
-        .view-comments-toggle:hover { text-decoration: underline; }
-        .comment-card { background-color: #F8F9FA; padding: 12px; border-radius: 8px; }
-        .comment-avatar { width: 32px; height: 32px; font-size: 0.9rem; background-color: var(--muted-text); }
-        .events-panel .card-header { background-color: #fff; font-weight: 600; font-size: 1.1rem; }
-        .event-card { border: 1px solid var(--border-color); border-radius: 10px; }
-        .event-card .badge { font-size: 0.7rem; font-weight: 600; padding: 4px 8px; }
-        .badge-social { background-color: #28a745 !important; } .badge-holiday { background-color: #17a2b8 !important; } .badge-celebration { background-color: #fd7e14 !important; }
-        .dropdown-item { cursor: pointer; }
-
-        
-        .sidebar-footer { margin-top: auto; }
-        .sidebar-footer .logout-btn { background-color: rgba(0,0,0,0.15); border: none; text-align: left; }
-        .sidebar-footer .logout-btn:hover { background-color: rgba(0,0,0,0.3); color: #fff; }
-
-        /* NEW: Main Header & Notifications */
-        .main-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
-        .main-header .search-bar { flex-grow: 1; }
-        .notification-bell { font-size: 1.5rem; color: #6c757d; position: relative; cursor: pointer; }
-        .notification-bell .badge { position: absolute; top: -5px; right: -8px; font-size: 0.6rem; }
-        .notifications-dropdown { min-width: 320px; max-height: 400px; overflow-y: auto; }
-        .notification-item { display: flex; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border-color); }
-        .notification-item:last-child { border-bottom: 0; }
-        .notification-item .avatar { width: 35px; height: 35px; font-size: 1rem; }
-        .notification-item p { margin-bottom: 0; font-size: 0.9rem; }
-        .notification-item small { font-size: 0.8rem; color: var(--muted-text); }
-        
-        /* NEW: Header User Profile Styling */
-        .header-profile-btn { 
-            background: none; 
-            border: none; 
-            transition: background-color 0.15s ease-in-out;
-            text-decoration: none; /* Make it look like a button but act like a link */
-            color: inherit;
-        }
-        .header-profile-btn:hover {
-             background-color: #f0f0f0; 
-        }
-        .header-profile-btn .avatar {
-            width: 35px;
-            height: 35px;
-            font-size: 1rem;
-            flex-shrink: 0;
-            background-color: var(--sage-light);
-        }
-    </style>
 </head>
+
 <body>
 
     <div class="modal fade" id="editPostModal" tabindex="-1" aria-labelledby="editPostModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
-                <form method="POST" action="">
+                <form id="editPostForm" method="POST" action="">
                     <div class="modal-header">
                         <h5 class="modal-title" id="editPostModalLabel">Edit Post</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
+                        <input type="text" id="editPostTitle" name="edit_post_title" class="input-underline mb-3 w-100" placeholder="Post title (optional)">
                         <input type="hidden" name="edit_post_index" id="editPostIndex">
                         <textarea name="edit_post_content" id="editPostContent" class="form-control" rows="5" required></textarea>
                     </div>
@@ -359,7 +180,7 @@ function getTagClass($tag) {
             </div>
         </div>
     </div>
-    
+
     <div class="modal fade" id="editCommentModal" tabindex="-1" aria-labelledby="editCommentModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-sm">
             <div class="modal-content">
@@ -411,159 +232,336 @@ function getTagClass($tag) {
     </div>
 
     <div class="main-content">
-        <header class="main-header mb-4">
-            <div class="search-bar">
+        <header class="main-header mb-4 d-flex justify-content-between align-items-center flex-wrap gap-3">
+
+            <!-- 🔍 Search Bar -->
+            <div class="search-bar flex-grow-1">
                 <div class="input-group">
                     <span class="input-group-text bg-white border-end-0"><i class="bi bi-search"></i></span>
                     <input id="searchInput" type="text" class="form-control border-start-0" placeholder="Search announcements...">
                 </div>
             </div>
-            
+
+            <!-- 🔔 Notifications & Profile -->
             <div class="d-flex align-items-center gap-3">
-                
-                <div class="dropdown">
-                    <button class="btn border-0" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        <i class="bi bi-bell-fill notification-bell">
-                            <span class="badge rounded-pill bg-danger">3</span>
-                        </i>
+
+                <!-- Notification Bell -->
+                <div class="dropdown position-relative">
+                    <button class="btn border-0 p-0 position-relative" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
+                        <i class="bi bi-bell-fill fs-5 text-dark"></i>
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                            3
+                            <span class="visually-hidden">unread notifications</span>
+                        </span>
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end notifications-dropdown p-0">
-                        <li class="p-2 border-bottom"><strong>Notifications</strong></li>
-                        <li><a class="dropdown-item notification-item" href="#"><div class="avatar bg-primary">JD</div><div><p><strong>John Doe</strong> commented on your post: "Great initiative!"</p><small>2 hours ago</small></div></a></li>
-                         <li><a class="dropdown-item notification-item" href="#"><div class="avatar bg-info">CM</div><div><p><strong>Council Member</strong> created a new alert: "Road closure on Elm Street..."</p><small>1 hour ago</small></div></a></li>
-                         <li><a class="dropdown-item notification-item" href="#"><div class="avatar bg-success">M</div><div><p><strong>Maria</strong> liked your comment on "Need volunteers..."</p><small>5 hours ago</small></div></a></li>
+                    <ul class="dropdown-menu dropdown-menu-end notifications-dropdown shadow-sm p-0 mt-2" style="min-width: 300px;">
+                        <li class="p-3 border-bottom fw-bold">Notifications</li>
+                        <li><a class="dropdown-item notification-item d-flex gap-2 p-3" href="#">
+                                <div class="avatar bg-primary text-white fw-bold">JD</div>
+                                <div>
+                                    <p class="mb-1"><strong>John Doe</strong> commented on your post: <em>"Great initiative!"</em></p>
+                                    <small class="text-muted">2 hours ago</small>
+                                </div>
+                            </a></li>
+                        <li><a class="dropdown-item notification-item d-flex gap-2 p-3" href="#">
+                                <div class="avatar bg-info text-white fw-bold">CM</div>
+                                <div>
+                                    <p class="mb-1"><strong>Council Member</strong> created a new alert: <em>"Road closure on Elm Street..."</em></p>
+                                    <small class="text-muted">1 hour ago</small>
+                                </div>
+                            </a></li>
+                        <li><a class="dropdown-item notification-item d-flex gap-2 p-3" href="#">
+                                <div class="avatar bg-success text-white fw-bold">M</div>
+                                <div>
+                                    <p class="mb-1"><strong>Maria</strong> liked your comment on <em>"Need volunteers..."</em></p>
+                                    <small class="text-muted">5 hours ago</small>
+                                </div>
+                            </a></li>
                         <li><a class="dropdown-item text-center small p-2" href="#">View all notifications</a></li>
                     </ul>
                 </div>
-                
+
+                <!-- Profile Dropdown -->
                 <div class="dropdown">
-                    <a href="profile.php" class="header-profile-btn d-flex align-items-center rounded-pill py-1 pe-2" title="User Profile">
-                        <div class="avatar me-2"><?= $currentUser['initial']; ?></div>
-                        
-                        <div class="d-none d-md-block text-start me-2">
-                            <span class="d-block lh-1 fw-bold text-dark" style="font-size: 0.9rem;"><?= sane($currentUser['name']); ?></span>
-                            <small class="badge bg-success rounded-pill px-2 py-0" style="font-size: 0.65rem; background-color: var(--sage-light) !important;"><?= strtoupper(sane($currentUser['role'])); ?></small>
+                    <a href="profile.php" class="header-profile-btn d-flex align-items-center rounded-pill py-1 pe-2 text-decoration-none" title="User Profile">
+                        <div class="avatar me-2 bg-secondary text-white fw-bold">
+                            <?= strtoupper(substr($currentUser['initial'] ?? $currentUser['name'] ?? '?', 0, 1)); ?>
                         </div>
-                        
+                        <div class="d-none d-md-block text-start me-2">
+                            <span class="d-block lh-1 fw-bold text-dark" style="font-size: 0.9rem;">
+                                <?= sane($currentUser['name'] ?? 'Anonymous'); ?>
+                            </span>
+                            <small class="badge bg-success rounded-pill px-2 py-0" style="font-size: 0.65rem;">
+                                <?= strtoupper(sane($currentUser['role'] ?? 'Member')); ?>
+                            </small>
+                        </div>
                         <i class="bi bi-chevron-right text-muted small"></i>
                     </a>
                 </div>
+
             </div>
-            </header>
+        </header>
 
         <div class="d-flex gap-4">
             <div class="main-feed">
                 <div class="d-flex gap-2 mb-3 filter-button-group">
-                     <button class="btn btn-sm active" data-tag="">ALL</button><button class="btn btn-sm" data-tag="Event">EVENT</button><button class="btn btn-sm" data-tag="Alert">ALERT</button><button class="btn btn-sm" data-tag="Lost & Found">LOST & FOUND</button><button class="btn btn-sm" data-tag="Volunteer">VOLUNTEER</button><button class="btn btn-sm" data-tag="Job">JOB</button>
+                    <button class="btn btn-sm active" data-tag="">ALL</button>
+                    <button class="btn btn-sm" data-tag="Event">EVENT</button>
+                    <button class="btn btn-sm" data-tag="Alert">ALERT</button>
+                    <button class="btn btn-sm" data-tag="Lost and Found">LOST & FOUND</button>
+                    <button class="btn btn-sm" data-tag="Volunteer">VOLUNTEER</button>
+                    <button class="btn btn-sm" data-tag="Job">JOB</button>
                 </div>
 
                 <div class="composer mb-4">
-                    <form method="POST" action="">
-                        <div class="d-flex gap-3"><div class="avatar"><?= $currentUser['initial']; ?></div><textarea name="new_post_content" placeholder="What's happening in your community?" rows="2" required></textarea></div>
+                    <form method="POST">
+                        <div class="d-flex gap-3">
+                            <!-- 👤 Avatar -->
+                            <div class="avatar"><?= $currentUser['initial'] ?? '?'; ?></div>
+
+                            <!-- 📝 Post Fields -->
+                            <div class="w-100">
+                                <!-- Title Input -->
+                                <input type="text"
+                                    name="new_post_title"
+                                    class="input-underline mb-2"
+                                    placeholder="Post title (optional)">
+
+
+                                <!-- Content Textarea -->
+                                <textarea name="new_post_content"
+                                    class="form-control"
+                                    placeholder="What's happening in your community?"
+                                    rows="3"
+                                    required></textarea>
+                            </div>
+                        </div>
+
                         <hr class="my-3">
                         <div class="d-flex justify-content-between align-items-center">
-                            <div class="d-flex gap-2 flex-wrap">
-                                <input type="radio" class="btn-check" name="new_post_tag" id="tag_general" value="General" checked><label class="btn btn-outline-secondary btn-sm tag-btn" for="tag_general">General</label>
-                                <input type="radio" class="btn-check" name="new_post_tag" id="tag_event" value="Event"><label class="btn btn-outline-secondary btn-sm tag-btn" for="tag_event">Event</label>
-                                <input type="radio" class="btn-check" name="new_post_tag" id="tag_alert" value="Alert"><label class="btn btn-outline-secondary btn-sm tag-btn" for="tag_alert">Alert</label>
-                                <input type="radio" class="btn-check" name="new_post_tag" id="tag_lost" value="Lost & Found"><label class="btn btn-outline-secondary btn-sm tag-btn" for="tag_lost">Lost & Found</label>
-                                <input type="radio" class="btn-check" name="new_post_tag" id="tag_volunteer" value="Volunteer"><label class="btn btn-outline-secondary btn-sm tag-btn" for="tag_volunteer">Volunteer</label>
-                                <input type="radio" class="btn-check" name="new_post_tag" id="tag_job" value="Job"><label class="btn btn-outline-secondary btn-sm tag-btn" for="tag_job">Job</label>
+                            <div class="d-flex flex-column flex-grow-1 me-3">
+                                <!-- 🏷️ Tag Selection -->
+                                <div class="d-flex gap-2 flex-wrap">
+                                    <?php
+                                    $tags = [
+                                        'General' => 'General',
+                                        'Event' => 'Event',
+                                        'Alert' => 'Alert',
+                                        'Lost and Found' => 'Lost and Found',
+                                        'Volunteer' => 'Volunteer',
+                                        'Job' => 'Job'
+                                    ];
+                                    foreach ($tags as $label => $value):
+                                        $safeId = 'tag_' . strtolower(str_replace([' ', '&'], ['_', 'and'], $value));
+                                    ?>
+                                        <input type="radio"
+                                            class="btn-check"
+                                            name="new_post_category"
+                                            id="<?= $safeId; ?>"
+                                            value="<?= $value; ?>"
+                                            <?= $value === 'General' ? 'checked' : ''; ?>>
+
+                                        <label class="btn btn-outline-secondary btn-sm tag-btn"
+                                            for="<?= $safeId; ?>">
+                                            <?= htmlspecialchars($label, ENT_QUOTES); ?>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
                             </div>
-                            <button type="submit" class="btn btn-post">Post</button>
+
+                            <!-- 🚀 Submit Button -->
+                            <button type="submit" class="btn btn-post align-self-start">Post</button>
                         </div>
+
                     </form>
                 </div>
 
+                <!-- Posts -->
                 <div id="postsContainer">
-                    <?php foreach ($_SESSION['posts'] as $i => $post):
-                        $isLiked = in_array($currentUser['name'], $post['likedBy'] ?? []);
-                        $isBookmarked = in_array($currentUser['name'], $post['bookmarkedBy'] ?? []);
-                        $isCurrentUserPost = ($post['user'] === $currentUser['name']);
-                        $tagClass = getTagClass($post['tag']);
-                    ?>
-                        <div id="post-<?= $i; ?>" class="post-card mb-3" data-post-index="<?= $i; ?>" data-post-tag="<?= sane($post['tag']); ?>">
+                    <?php foreach ($posts as $i => $post): ?>
+                        <?php
+                        $postId = $post['id'];
+                        $first = trim($post['first_name'] ?? '');
+                        $last = trim($post['last_name'] ?? '');
+                        $postUser = ($first || $last) ? "$first $last" : 'Anonymous';
+
+                        $postRole = $post['role'] ?? '';
+                        $postTime = date('M d, Y H:i', strtotime($post['created_at']));
+                        $postTag = $post['category'] ?? 'General';
+                        $postTitle = $post['title'] ?? '';
+                        $postContent = $post['content'] ?? '';
+                        $postLikes = $post['total_likes'] ?? 0;
+                        $postComments = $post['total_comments'] ?? 0;
+
+                        $isCurrentUserPost = $post['created_by'] == $userId;
+
+                        // Like status
+                        $isLiked = $pdo->prepare("SELECT 1 FROM likes WHERE post_type='community' AND post_id=? AND user_id=?");
+                        $isLiked->execute([$postId, $userId]);
+                        $liked = $isLiked->rowCount() > 0;
+
+                        // Bookmark status
+                        $isBookmarked = $pdo->prepare("SELECT 1 FROM bookmarks WHERE post_type='community' AND post_id=? AND user_id=?");
+                        $isBookmarked->execute([$postId, $userId]);
+                        $bookmarked = $isBookmarked->rowCount() > 0;
+
+                        // Fetch comments for this post
+                        $commentsForPost = getComments($pdo, $postId);
+
+                        // Tag class for filtering
+                        $tagClassMap = [
+                            'Lost and Found' => 'tag-lost-and-found',
+                            'Event' => 'tag-event',
+                            'Alert' => 'tag-alert',
+                            'Volunteer' => 'tag-volunteer',
+                            'Job' => 'tag-job'
+                        ];
+                        $tagClass = $tagClassMap[$postTag] ?? 'tag-general';
+
+
+                        ?>
+                        <div id="post-<?= $postId; ?>" class="post-card mb-3" data-post-tag="<?= $postTag; ?>">
                             <div class="d-flex gap-3">
-                                <div class="avatar"><?= strtoupper(substr($post['user'], 0, 1)); ?></div>
+                                <div class="avatar"><?= strtoupper(substr($postUser, 0, 1)); ?></div>
                                 <div class="w-100">
                                     <div class="d-flex justify-content-between align-items-start">
                                         <div>
-                                            <strong><?= sane($post['user']); ?></strong><?php if ($post['role'] === 'Admin'): ?><small class="text-muted"> • <?= sane($post['role']); ?></small><?php endif; ?>
-                                            <small class="text-muted d-block" style="margin-top: -3px;"><?= sane($post['time']); ?></small>
+                                            <strong><?= sane($postUser); ?></strong>
+                                            <?php if ($postRole === 'Admin'): ?>
+                                                <small class="text-muted"> • <?= sane($postRole); ?></small>
+                                            <?php endif; ?>
+                                            <small class="text-muted d-block"><?= sane($postTime); ?></small>
+                                            <?php if (!empty($postTitle)): ?>
+                                                <h5 class="post-title"><?= htmlspecialchars($postTitle); ?></h5>
+                                            <?php else: ?>
+                                                <h6 class="text-muted post-title">Untitled Post</h5>
+                                                <?php endif; ?>
                                         </div>
                                         <div class="d-flex align-items-center gap-2">
-                                            <span class="badge <?= $tagClass; ?>"><?= sane($post['tag']); ?></span>
-                                            <form method="POST" class="m-0"><input type="hidden" name="bookmark_post_index" value="<?= $i; ?>"><button type="submit" class="btn-as-link" data-bs-toggle="tooltip" title="Bookmark"><i class="bi <?= $isBookmarked ? 'bi-bookmark-fill text-warning' : 'bi-bookmark'; ?>"></i></button></form>
+                                            <span class="badge <?= $tagClass; ?>"><?= htmlspecialchars($postTag, ENT_NOQUOTES); ?></span>
+                                            <!-- 🔖 Bookmark Button -->
+                                            <button class="btn-bookmark btn-as-link" data-post-id="<?= $postId; ?>" title="Bookmark">
+                                                <i class="bi <?= $bookmarked ? 'bi-bookmark-fill text-warning' : 'bi-bookmark'; ?>"></i>
+                                            </button>
+
+                                            <!-- ⋮ Ellipsis Dropdown -->
                                             <div class="dropdown">
-                                                <button class="btn btn-sm btn-link text-muted p-0 btn-as-link" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots-vertical"></i></button>
+                                                <button class="btn btn-sm btn-link text-muted p-0 btn-as-link" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                                    <i class="bi bi-three-dots-vertical"></i>
+                                                </button>
                                                 <ul class="dropdown-menu dropdown-menu-end">
                                                     <?php if ($isCurrentUserPost): ?>
-                                                        <li><a class="dropdown-item edit-post-btn" data-index="<?= $i; ?>" data-content="<?= htmlspecialchars($post['content'], ENT_QUOTES); ?>"><i class="bi bi-pencil me-2"></i>Edit</a></li>
-                                                        <li><form method="POST" class="m-0" onsubmit="return confirm('Delete this post?');"><input type="hidden" name="delete_post_index" value="<?= $i; ?>"><button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2"></i>Delete</button></form></li>
-                                                        <li><hr class="dropdown-divider"></li>
+                                                        <li>
+                                                            <a href="#"
+                                                                class="dropdown-item edit-post-btn"
+                                                                data-bs-toggle="modal"
+                                                                data-bs-target="#editPostModal"
+                                                                data-index="<?= $postId; ?>"
+                                                                data-title="<?= htmlspecialchars($postTitle, ENT_QUOTES); ?>"
+                                                                data-content="<?= htmlspecialchars($postContent, ENT_QUOTES); ?>">
+                                                                <i class="bi bi-pencil me-2"></i>Edit
+                                                            </a>
+                                                        </li>
+                                                        <li>
+                                                            <form method="POST" class="m-0" onsubmit="return confirm('Delete this post?');">
+                                                                <input type="hidden" name="delete_post_id" value="<?= $postId; ?>">
+                                                                <button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2"></i>Delete</button>
+                                                            </form>
+                                                        </li>
+                                                        <li>
+                                                            <hr class="dropdown-divider">
+                                                        </li>
                                                     <?php endif; ?>
-                                                    <li><a class="dropdown-item text-danger" href="#" onclick="showCustomAlert('Report functionality is a work in progress.'); return false;"><i class="bi bi-flag me-2"></i>Report</a></li>
+                                                    <li>
+                                                        <a class="dropdown-item text-danger" href="#" onclick="showCustomAlert('Report functionality coming soon.'); return false;">
+                                                            <i class="bi bi-flag me-2"></i>Report
+                                                        </a>
+                                                    </li>
                                                 </ul>
                                             </div>
+
                                         </div>
                                     </div>
 
-                                    <p class="mt-2 mb-2 post-content-text"><?= nl2br(sane($post['content'])); ?></p>
+                                    <p class="mt-2 mb-2 post-content post-content-text"><?= nl2br(sane($postContent)); ?></p>
 
                                     <div class="d-flex justify-content-between align-items-center mt-3 interaction-stats">
                                         <div class="d-flex align-items-center gap-3">
-                                            <form method="POST" class="m-0">
-                                                <input type="hidden" name="like_post_index" value="<?= $i; ?>">
-                                                <button type="submit" class="p-0 <?= $isLiked ? 'liked' : ''; ?>">
-                                                    <i class="bi <?= $isLiked ? 'bi-heart-fill' : 'bi-heart'; ?>"></i> <?= $post['likes']; ?>
-                                                </button>
-                                            </form>
-                                            <span><i class="bi bi-chat-left"></i> <?= $post['comments']; ?></span>
-                                            <span><i class="bi bi-arrow-repeat"></i> <?= $post['shares']; ?></span>
-                                        </div>
-                                        <?php if ($post['comments'] > 0): ?>
-                                            <a class="view-comments-toggle" data-bs-toggle="collapse" href="#comments-<?= $i; ?>" role="button" aria-expanded="false" aria-controls="comments-<?= $i; ?>">
-                                                View comments
+                                            <!-- ❤️ Like Button -->
+                                            <button class="btn-like" data-post-id="<?= $postId; ?>">
+                                                <i class="bi <?= $liked ? 'bi-heart-fill text-danger' : 'bi-heart'; ?>"></i>
+                                                <span class="like-count"><?= $postLikes; ?></span>
+                                            </button>
+
+
+
+                                            <!-- 💬 Comment Count + Toggle -->
+                                            <a class="view-comments-toggle" data-bs-toggle="collapse" href="#comments-<?= $postId; ?>">
+                                                <i class="bi bi-chat-left"></i>
+                                                <span id="comment-count-<?= $postId; ?>"><?= $postComments; ?></span>
                                             </a>
-                                        <?php endif; ?>
+
+                                        </div>
                                     </div>
-                                    
-                                    <div class="collapse mt-3" id="comments-<?= $i; ?>">
-                                        <hr>
-                                        <?php if (isset($_SESSION['comments'][$i]) && !empty($_SESSION['comments'][$i])): ?>
-                                            <?php foreach ($_SESSION['comments'][$i] as $c_idx => $comment):
-                                                $isCurrentUserComment = ($comment['user'] === $currentUser['name']);
-                                            ?>
-                                            <div class="d-flex gap-2 mb-3 comment-card">
-                                                <div class="avatar comment-avatar"><?= strtoupper(substr($comment['user'], 0, 1)); ?></div>
-                                                <div class="w-100">
-                                                    <div class="d-flex justify-content-between">
-                                                        <div>
-                                                            <strong><?= sane($comment['user']); ?></strong>
-                                                            <small class="text-muted"> • <?= sane($comment['time']); ?></small>
+
+                                    <!-- 💬 Comment Section -->
+                                    <div class="collapse" id="comments-<?= $postId; ?>">
+                                        <!-- Existing Comments -->
+                                        <div class="comment-list">
+                                            <?php foreach ($commentsForPost as $comment): ?>
+                                                <?php
+                                                $commentUser = trim($comment['first_name'] . ' ' . $comment['last_name']) ?: 'Anonymous';
+                                                $commentTime = date('M d, Y H:i', strtotime($comment['created_at']));
+                                                $commentContent = $comment['content'];
+                                                $isCurrentUserComment = $comment['user_id'] == $userId;
+                                                ?>
+                                                <div class="d-flex gap-2 mb-3 comment-card" data-comment-id="<?= $comment['id']; ?>">
+                                                    <div class="avatar comment-avatar bg-secondary"><?= strtoupper(substr($commentUser, 0, 1)); ?></div>
+                                                    <div class="w-100">
+                                                        <div class="d-flex justify-content-between">
+                                                            <div>
+                                                                <strong><?= sane($commentUser); ?></strong>
+                                                                <small class="text-muted"> • <?= sane($commentTime); ?></small>
+                                                            </div>
+                                                            <?php if ($isCurrentUserComment): ?>
+                                                                <div class="dropdown">
+                                                                    <button class="btn btn-sm btn-link text-muted p-0" type="button" data-bs-toggle="dropdown">
+                                                                        <i class="bi bi-three-dots"></i>
+                                                                    </button>
+                                                                    <ul class="dropdown-menu dropdown-menu-end">
+                                                                        <li>
+                                                                            <button class="dropdown-item btn-edit-comment"
+                                                                                data-comment-id="<?= $comment['id']; ?>"
+                                                                                data-comment-text="<?= htmlspecialchars($commentContent, ENT_QUOTES); ?>"
+                                                                                data-post-index="<?= $postId; ?>">
+                                                                                <i class="bi bi-pencil me-2"></i>Edit
+                                                                            </button>
+
+                                                                        </li>
+                                                                        <li>
+                                                                            <button class="dropdown-item text-danger btn-delete-comment"
+                                                                                data-comment-id="<?= $comment['id']; ?>">
+                                                                                <i class="bi bi-trash me-2"></i>Delete
+                                                                            </button>
+                                                                        </li>
+                                                                    </ul>
+                                                                </div>
+                                                            <?php endif; ?>
                                                         </div>
-                                                        <?php if ($isCurrentUserComment): ?>
-                                                        <div class="dropdown">
-                                                             <button class="btn btn-sm btn-link text-muted p-0" type="button" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i></button>
-                                                             <ul class="dropdown-menu dropdown-menu-end">
-                                                                 <li><a class="dropdown-item edit-comment-btn" data-post-index="<?= $i; ?>" data-comment-index="<?= $c_idx; ?>" data-comment-text="<?= htmlspecialchars($comment['content'], ENT_QUOTES); ?>"><i class="bi bi-pencil me-2"></i>Edit</a></li>
-                                                                 <li><form method="POST" class="m-0" onsubmit="return confirm('Delete this comment?');"><input type="hidden" name="delete_comment_post" value="<?= $i; ?>"><input type="hidden" name="delete_comment_index" value="<?= $c_idx; ?>"><button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2"></i>Delete</button></form></li>
-                                                             </ul>
-                                                         </div>
-                                                        <?php endif; ?>
+                                                        <p class="mb-0 comment-text"><?= sane($commentContent); ?></p>
                                                     </div>
-                                                    <p class="mb-0 comment-content-text-<?= $i; ?>-<?= $c_idx; ?>"><?= sane($comment['content']); ?></p>
                                                 </div>
-                                            </div>
                                             <?php endforeach; ?>
-                                        <?php endif; ?>
-                                        
+                                        </div>
+
+                                        <!-- Comment Input -->
                                         <div class="d-flex gap-2 mt-3 pt-2 border-top">
-                                            <div class="avatar comment-avatar bg-secondary"><?= $currentUser['initial']; ?></div>
-                                            <form method="POST" class="w-100 d-flex gap-2" action="#comments-<?= $i; ?>">
-                                                <input type="hidden" name="comment_post_index" value="<?= $i; ?>">
+                                            <div class="avatar comment-avatar bg-secondary"><?= $currentUser['initial'] ?? '?'; ?></div>
+                                            <form method="POST" class="comment-form w-100 d-flex gap-2" data-post-id="<?= $postId; ?>">
                                                 <input type="text" name="comment_text" class="form-control form-control-sm rounded-pill" placeholder="Write a comment..." required>
-                                                <button type="submit" class="btn btn-sm btn-success rounded-pill"><i class="bi bi-send-fill"></i></button>
+                                                <button type="submit" class="btn btn-sm btn-success rounded-pill">
+                                                    <i class="bi bi-send-fill"></i>
+                                                </button>
                                             </form>
                                         </div>
                                     </div>
@@ -578,15 +576,27 @@ function getTagClass($tag) {
                 <div class="card events-panel">
                     <div class="card-header"><i class="bi bi-calendar-event me-2"></i> Upcoming Events</div>
                     <ul class="list-group list-group-flush">
-                        <?php foreach ($events as $event): ?>
-                            <li class="list-group-item event-card m-2">
-                                <span class="badge badge-pill badge-<?= strtolower($event['category']); ?> mb-1"><?= sane($event['category']); ?></span>
-                                <h6 class="fw-bold mb-1"><?= sane($event['title']); ?></h6>
-                                <p class="mb-0 small text-muted"><i class="bi bi-clock me-1"></i> <?= sane($event['date']); ?> | <?= sane($event['time']); ?></p>
-                                <p class="mb-0 small text-muted"><i class="bi bi-geo-alt me-1"></i> <?= sane($event['location']); ?></p>
-                                <p class="mb-0 small mt-2"><i class="bi bi-people me-1"></i> <?= $event['attendees']; ?> attending</p>
-                            </li>
-                        <?php endforeach; ?>
+                        <?php if (!empty($events)): ?>
+                            <?php foreach ($events as $event): ?>
+                                <?php
+                                $category = $event['category'] ?? 'general';
+                                $title = $event['title'] ?? 'Untitled';
+                                $date = $event['date'] ?? 'TBD';
+                                $time = $event['time'] ?? '';
+                                $location = $event['location'] ?? 'Location not set';
+                                $attendees = $event['attendees'] ?? 0;
+                                ?>
+                                <li class="list-group-item event-card m-2">
+                                    <span class="badge <?= $tagClass; ?>"><?= htmlspecialchars($postTag, ENT_NOQUOTES); ?></span>
+                                    <h6 class="fw-bold mb-1"><?= sane($title); ?></h6>
+                                    <p class="mb-0 small text-muted"><i class="bi bi-clock me-1"></i> <?= sane($date); ?><?= $time ? ' | ' . sane($time) : ''; ?></p>
+                                    <p class="mb-0 small text-muted"><i class="bi bi-geo-alt me-1"></i> <?= sane($location); ?></p>
+                                    <p class="mb-0 small mt-2"><i class="bi bi-people me-1"></i> <?= $attendees; ?> attending</p>
+                                </li>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <li class="list-group-item text-muted text-center">No upcoming events found.</li>
+                        <?php endif; ?>
                         <li class="list-group-item text-center"><a href="#">View All Events</a></li>
                     </ul>
                 </div>
@@ -596,84 +606,394 @@ function getTagClass($tag) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Custom Alert for placeholder functionality
-        function showCustomAlert(message) {
-            alert(message);
-        }
-
-        // Logout Confirmation
-        function confirmLogout() {
-            if (confirm("Are you sure you want to log out?")) {
-                document.getElementById('logoutForm').submit();
-            }
-        }
-
-        // Post Filter Logic
         document.addEventListener('DOMContentLoaded', () => {
+            console.log('Main script loaded');
+
+            // 🔔 Tooltip Init
+            const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+            [...tooltipTriggerList].forEach(el => new bootstrap.Tooltip(el));
+
+            // 🔍 Post Filter Logic
             const postsContainer = document.getElementById('postsContainer');
             const filterButtons = document.querySelectorAll('.filter-button-group .btn');
-            
             filterButtons.forEach(button => {
                 button.addEventListener('click', function() {
                     filterButtons.forEach(btn => btn.classList.remove('active'));
                     this.classList.add('active');
                     const selectedTag = this.getAttribute('data-tag');
-                    
                     postsContainer.querySelectorAll('.post-card').forEach(post => {
                         const postTag = post.getAttribute('data-post-tag');
-                        if (!selectedTag || postTag === selectedTag) {
-                            post.style.display = '';
-                        } else {
-                            post.style.display = 'none';
-                        }
+                        post.style.display = (!selectedTag || postTag === selectedTag) ? '' : 'none';
                     });
                 });
             });
 
-            // Post Edit Modal Logic
-            const editPostModal = document.getElementById('editPostModal');
-            if (editPostModal) {
-                editPostModal.addEventListener('show.bs.modal', event => {
-                    const button = event.relatedTarget;
-                    const postIndex = button.getAttribute('data-index');
-                    const postContent = button.getAttribute('data-content');
-                    
-                    document.getElementById('editPostIndex').value = postIndex;
-                    document.getElementById('editPostContent').value = postContent;
+
+            // 🧠 POST EDIT & DELETE HANDLER
+            document.addEventListener('click', async e => {
+                const editBtn = e.target.closest('.edit-post-btn');
+                const deleteBtn = e.target.closest('.dropdown-item.text-danger');
+
+                // ✏️ EDIT POST — open modal
+                if (editBtn) {
+                    const postId = editBtn.dataset.index;
+                    const content = editBtn.dataset.content;
+                    const title = editBtn.dataset.title || '';
+
+                    document.getElementById('editPostTitle').value = title;
+                    document.getElementById('editPostIndex').value = postId;
+                    document.getElementById('editPostContent').value = content;
+
+                    const modalEl = document.getElementById('editPostModal');
+                    const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+                    modalInstance.show();
+
+                }
+
+                // 🗑️ DELETE POST — AJAX
+                if (deleteBtn && deleteBtn.closest('form')) {
+                    e.preventDefault();
+                    const form = deleteBtn.closest('form');
+                    const postId = form.querySelector('input[name="delete_post_id"]').value;
+
+                    if (!confirm('Delete this post?')) return;
+
+                    try {
+                        const response = await fetch('delete_post.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            credentials: 'include', // ✅ send session cookie!
+                            body: `post_id=${postId}`
+                        });
+
+                        const result = await response.json();
+                        if (result.success) {
+                            const postCard = document.getElementById(`post-${postId}`);
+                            if (postCard) postCard.remove();
+                        } else {
+                            alert(result.message || 'Failed to delete post');
+                        }
+                    } catch (err) {
+                        console.error('Delete failed:', err);
+                    }
+                }
+            });
+
+            // 💾 HANDLE EDIT POST SUBMISSION
+            document.getElementById('editPostForm').addEventListener('submit', async e => {
+                e.preventDefault();
+
+                const newTitle = document.getElementById('editPostTitle').value.trim();
+                const postId = document.getElementById('editPostIndex').value;
+                const newContent = document.getElementById('editPostContent').value.trim();
+
+                if (!newContent) return;
+
+                try {
+                    const res = await fetch('edit_post.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        credentials: 'include',
+                        body: `post_id=${encodeURIComponent(postId)}&post_title=${encodeURIComponent(newTitle)}&post_content=${encodeURIComponent(newContent)}`
+                    });
+
+                    const result = await res.json();
+                    if (result.success) {
+                        const postCard = document.getElementById(`post-${postId}`);
+                        if (postCard) {
+                            // ✅ Update content
+                            const contentEl = postCard.querySelector('.post-content');
+                            if (contentEl) contentEl.textContent = result.new_content;
+
+                            // ✅ Update title
+                            const titleEl = postCard.querySelector('.post-title');
+                            if (titleEl) {
+                                titleEl.textContent = result.new_title;
+                            } else if (result.new_title) {
+                                const metaBlock = postCard.querySelector('.d-flex.justify-content-between.align-items-start > div');
+                                if (metaBlock) {
+                                    const newTitleEl = document.createElement('h5');
+                                    newTitleEl.className = 'post-title';
+                                    newTitleEl.textContent = result.new_title;
+                                    metaBlock.appendChild(newTitleEl);
+                                }
+                            }
+                        }
+
+                        // ✅ Update edit button's data attributes
+                        const editBtn = document.querySelector(`.edit-post-btn[data-index="${postId}"]`);
+                        if (editBtn) {
+                            editBtn.dataset.content = newContent;
+                            editBtn.dataset.title = newTitle;
+                        }
+
+                        // ✅ Close modal and reset form
+                        const modalEl = document.getElementById('editPostModal');
+                        const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+                        modalInstance.hide();
+                        document.getElementById('editPostForm').reset();
+                    } else {
+                        alert(result.message || 'Failed to edit post.');
+                    }
+                } catch (err) {
+                    console.error('Edit failed:', err);
+                    alert('Something went wrong.');
+                }
+            });
+
+
+            // 💬 Comment submit
+            document.querySelectorAll('.comment-form').forEach(form => {
+                form.addEventListener('submit', async e => {
+                    e.preventDefault();
+                    const postId = form.dataset.postId;
+                    const input = form.querySelector('input[name="comment_text"]');
+                    const text = input.value.trim();
+                    if (!text) return;
+
+                    try {
+                        const response = await fetch('comment.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body: `comment_post_id=${postId}&comment_text=${encodeURIComponent(text)}`
+                        });
+
+                        const raw = await response.text();
+                        const result = JSON.parse(raw);
+                        if (result.success && result.html) {
+                            const commentList = document.querySelector(`#comments-${postId} .comment-list`);
+                            commentList.insertAdjacentHTML('beforeend', result.html);
+                            console.log('Inserting comment:', result.html);
+                            input.value = '';
+
+                            // ✅ Update comment count
+                            const countSpan = document.getElementById(`comment-count-${postId}`);
+                            if (countSpan) {
+                                countSpan.textContent = parseInt(countSpan.textContent || '0') + 1;
+                            }
+
+                            // 🔽 Add this block here to auto-expand the comment section
+                            const collapse = form.closest('.collapse');
+                            if (collapse && !collapse.classList.contains('show')) {
+                                new bootstrap.Collapse(collapse, {
+                                    toggle: true
+                                });
+                            }
+                        }
+
+                    } catch (error) {
+                        console.error('Comment submission failed:', error);
+                    }
                 });
-            }
-            
-            // Comment Edit Modal Logic (NEW)
+            });
+
+            // ✏️ Comment Edit Modal
             const editCommentModal = document.getElementById('editCommentModal');
             if (editCommentModal) {
-                editCommentModal.addEventListener('show.bs.modal', event => {
-                    const button = event.relatedTarget;
-                    const postIndex = button.getAttribute('data-post-index');
-                    const commentIndex = button.getAttribute('data-comment-index');
-                    const commentText = button.getAttribute('data-comment-text');
-                    
-                    document.getElementById('editCommentPostIndex').value = postIndex;
-                    document.getElementById('editCommentIndex').value = commentIndex;
-                    document.getElementById('editCommentText').value = commentText;
+                document.querySelectorAll('.btn-edit-comment').forEach(button => {
+                    button.addEventListener('click', () => {
+                        const postId = button.getAttribute('data-post-index');
+                        const commentId = button.getAttribute('data-comment-id');
+                        const commentText = button.getAttribute('data-comment-text');
+
+                        document.getElementById('editCommentPostIndex').value = postId;
+                        document.getElementById('editCommentIndex').value = commentId;
+                        document.getElementById('editCommentText').value = commentText;
+
+                        // ✅ Explicitly show the modal
+                        console.log('Edit clicked:', {
+                            postId,
+                            commentId,
+                            commentText
+                        });
+                        const modalInstance = new bootstrap.Modal(editCommentModal);
+                        modalInstance.show();
+                    });
                 });
 
-                // Attach click listeners to all edit comment buttons
-                document.querySelectorAll('.edit-comment-btn').forEach(btn => {
+                // ✏️ Attach edit post buttons
+                document.querySelectorAll('.edit-post-btn').forEach(btn => {
                     btn.setAttribute('data-bs-toggle', 'modal');
-                    btn.setAttribute('data-bs-target', '#editCommentModal');
+                    btn.setAttribute('data-bs-target', '#editPostModal');
+                });
+
+                const editCommentModal = document.getElementById('editCommentModal');
+                const editCommentIndex = document.getElementById('editCommentIndex');
+                const editCommentText = document.getElementById('editCommentText');
+
+                // ✅ Event Delegation for Edit + Delete buttons
+                document.addEventListener('click', async e => {
+                    const editBtn = e.target.closest('.btn-edit-comment');
+                    const deleteBtn = e.target.closest('.btn-delete-comment');
+
+                    // 📝 EDIT COMMENT — Open Modal
+                    if (editBtn) {
+                        const commentId = editBtn.dataset.commentId;
+                        const commentText = editBtn.dataset.commentText;
+
+                        editCommentIndex.value = commentId;
+                        editCommentText.value = commentText;
+
+                        const modal = new bootstrap.Modal(editCommentModal);
+                        modal.show();
+                    }
+
+                    // 🗑️ DELETE COMMENT
+                    if (deleteBtn) {
+                        const commentId = deleteBtn.dataset.commentId;
+                        const commentCard = document.querySelector(`[data-comment-id="${commentId}"]`);
+                        const postContainer = commentCard.closest('.collapse');
+                        const postId = postContainer?.id.replace('comments-', '');
+
+                        if (confirm('Delete this comment?')) {
+                            try {
+                                const response = await fetch('delete_comment.php', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/x-www-form-urlencoded',
+                                        'X-Requested-With': 'XMLHttpRequest'
+                                    },
+                                    body: `comment_id=${commentId}`
+                                });
+
+                                const result = await response.json();
+                                if (result.success) {
+                                    // Remove comment visually
+                                    commentCard.remove();
+
+                                    // 🔢 Update comment counter
+                                    if (postId) {
+                                        const counter = document.getElementById(`comment-count-${postId}`);
+                                        if (counter) {
+                                            let current = parseInt(counter.textContent.trim(), 10) || 0;
+                                            if (current > 0) counter.textContent = current - 1;
+                                        }
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('Comment deletion failed:', error);
+                            }
+                        }
+                    }
+                });
+
+                // ✅ Handle comment edit submission
+                document.querySelector('#editCommentModal form').addEventListener('submit', async e => {
+                    e.preventDefault();
+                    const commentId = document.getElementById('editCommentIndex').value;
+                    const text = document.getElementById('editCommentText').value.trim();
+
+                    try {
+                        const response = await fetch('edit_comment.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body: `comment_id=${commentId}&comment_text=${encodeURIComponent(text)}`
+                        });
+
+                        const result = await response.json();
+                        if (result.success) {
+                            const commentCard = document.querySelector(`[data-comment-id="${commentId}"]`);
+                            if (commentCard) {
+                                commentCard.querySelector('.comment-text').textContent = text;
+
+                                // ✅ Update the edit button's data-comment-text
+                                const editButton = commentCard.querySelector('.btn-edit-comment');
+                                if (editButton) {
+                                    editButton.setAttribute('data-comment-text', text);
+                                }
+                                bootstrap.Modal.getInstance(editCommentModal).hide();
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Comment edit failed:', error);
+                    }
                 });
             }
-            
-            // Attach click listeners to all edit post buttons
-            document.querySelectorAll('.edit-post-btn').forEach(btn => {
-                btn.setAttribute('data-bs-toggle', 'modal');
-                btn.setAttribute('data-bs-target', '#editPostModal');
+
+
+            // ❤️ AJAX Like Handler
+            document.querySelectorAll('.btn-like').forEach(button => {
+                button.addEventListener('click', async () => {
+                    const postId = button.dataset.postId;
+                    try {
+                        const response = await fetch('like.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body: `like_post_id=${postId}`
+                        });
+
+                        const result = await response.json();
+                        if (!result.success) return;
+
+                        const icon = button.querySelector('i');
+                        const count = button.querySelector('.like-count');
+
+                        if (icon) {
+                            icon.className = result.liked ? 'bi bi-heart-fill text-danger' : 'bi bi-heart';
+                        }
+
+                        button.classList.toggle('liked', result.liked);
+                        if (count) count.textContent = result.total_likes;
+                    } catch (error) {
+                        console.error('Like toggle failed:', error);
+                    }
+                });
             });
-            
-            // Initializing tooltips (required for Bootstrap 5)
-            const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-            const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+
+            // 📌 Bookmark toggle
+            document.querySelectorAll('.btn-bookmark').forEach(button => {
+                button.addEventListener('click', async () => {
+                    const postId = button.dataset.postId;
+                    try {
+                        const response = await fetch('bookmark.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body: `bookmark_post_id=${postId}`
+                        });
+
+                        const result = await response.json();
+                        if (result.success) {
+                            const icon = button.querySelector('i');
+                            icon.className = result.bookmarked ? 'bi bi-bookmark-fill text-warning' : 'bi bi-bookmark';
+                        }
+                    } catch (error) {
+                        console.error('Bookmark toggle failed:', error);
+                    }
+                });
+            });
+
+
+            // 🔐 Logout Confirmation
+            window.confirmLogout = function() {
+                if (confirm("Are you sure you want to log out?")) {
+                    document.getElementById('logoutForm').submit();
+                }
+            };
+
+            // ⚠️ Placeholder Alert
+            window.showCustomAlert = function(message) {
+                alert(message);
+            };
         });
     </script>
 </body>
+
 </html>

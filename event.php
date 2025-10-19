@@ -123,7 +123,7 @@ session_start();
 <body>
   <div class="container py-4">
      <div class="mb-4">
-        <a href="dashboard.html" class="btn btn-link btn-back text-decoration-none p-0">
+        <a href="dashboard.php" class="btn btn-link btn-back text-decoration-none p-0">
             <i class="fas fa-arrow-left me-2"></i> Back to Dashboard
         </a>
     </div>
