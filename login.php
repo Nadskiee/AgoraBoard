@@ -199,13 +199,6 @@ include "navbar.php"; // Safe to include after redirect logic
                 <p class="text-muted small mb-1">&copy; 2025 AgoraBoard. All rights reserved.</p>
             </div>
         </div>
-        <hr class="my-3">
-        <div class="text-center">
-            <p class="text-muted small mb-1">&copy; 2025 AgoraBoard. All rights reserved.</p>
-        </div>
-        </div>
     </footer>
-
 </body>
-
 </html>
