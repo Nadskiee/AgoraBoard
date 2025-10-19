@@ -1,10 +1,4 @@
 <?php
-// navbar.php
-if (session_status() === PHP_SESSION_NONE) session_start();
-
-$isLoggedIn = isset($_SESSION['user_id']);
-$userName   = $isLoggedIn ? $_SESSION['name'] : '';
-$userRole   = $isLoggedIn ? $_SESSION['role'] : '';
 $currentPage = basename($_SERVER['PHP_SELF']); // e.g., "index.php", "login.php", "register.php"
 ?>
 
@@ -35,18 +29,43 @@ $currentPage = basename($_SERVER['PHP_SELF']); // e.g., "index.php", "login.php"
     .btn-emerald {
         background: linear-gradient(135deg, #10b981, #059669);
         color: white;
+        /* ensure text is white */
     }
 
     .btn-emerald:hover {
         background: linear-gradient(135deg, #059669, #10b981);
         color: white;
     }
+
+    .btn-outline-success {
+        border-color: #10b981;
+        color: #10b981;
+    }
+
+    .btn-outline-success:hover {
+        background-color: #10b981;
+        color: white;
+    }
+
+    /* Active button always white text */
+    .btn-emerald,
+    .btn-outline-success.active {
+        color: white !important;
+    }
+
+    /* Navbar solid white background with subtle shadow */
+    .navbar {
+        background-color: rgba(255, 255, 255, 0.95);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+        backdrop-filter: blur(12px);
+        transition: background-color 0.3s ease;
+    }
 </style>
 
-<nav class="navbar navbar-expand-lg sticky-top backdrop-blur border-bottom">
+<nav class="navbar navbar-expand-lg sticky-top border-bottom">
     <div class="container">
         <!-- Brand -->
-        <a href="<?= $isLoggedIn ? 'main.php' : 'index.php'; ?>" class="navbar-brand d-flex align-items-center text-decoration-none">
+        <a href="index.php" class="navbar-brand d-flex align-items-center text-decoration-none">
             <div class="position-relative me-3">
                 <div class="feature-icon bg-emerald" style="width: 40px; height: 40px;">
                     <i class="fas fa-users" style="font-size: 1.5rem;"></i>
@@ -58,48 +77,16 @@ $currentPage = basename($_SERVER['PHP_SELF']); // e.g., "index.php", "login.php"
             </div>
         </a>
 
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <?php if ($isLoggedIn): ?>
-                <!-- Logged-in Navbar -->
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item"><a class="nav-link <?= $currentPage === 'main.php' ? 'active' : '' ?>" href="main.php">Home</a></li>
-                    <li class="nav-item"><a class="nav-link <?= $currentPage === 'announcements.php' ? 'active' : '' ?>" href="announcements.php">Announcements</a></li>
-                    <li class="nav-item"><a class="nav-link <?= $currentPage === 'events.php' ? 'active' : '' ?>" href="events.php">Events</a></li>
-                    <li class="nav-item"><a class="nav-link <?= $currentPage === 'categories.php' ? 'active' : '' ?>" href="categories.php">Categories</a></li>
-                </ul>
-
-                <div class="d-flex gap-2 align-items-center">
-                    <span class="text-success fw-semibold me-2">Hello, <?= htmlspecialchars($userName) ?></span>
-
-                    <?php if ($userRole === 'admin'): ?>
-                        <a href="dashboard.php" class="btn btn-outline-success">Admin Dashboard</a>
-                    <?php endif; ?>
-
-                    <div class="dropdown">
-                        <button class="btn btn-emerald dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            Create
-                        </button>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="post_event.php">New Event</a></li>
-                            <li><a class="dropdown-item" href="post_announcement.php">New Announcement</a></li>
-                            <li><a class="dropdown-item" href="post_job.php">New Job</a></li>
-                            <li><a class="dropdown-item" href="post_lostfound.php">Lost & Found</a></li>
-                            <li><a class="dropdown-item" href="post_volunteer.php">Volunteering</a></li>
-                        </ul>
-                    </div>
-
-                    <a href="logout.php" class="btn btn-danger">Logout</a>
-                </div>
+        <!-- Guest Buttons -->
+        <div class="d-flex gap-2 ms-auto">
+            <?php if ($currentPage === 'index.php'): ?>
+                <!-- On landing page, make Register primary (green) -->
+                <a href="login.php" class="btn btn-outline-success">Login</a>
+                <a href="register.php" class="btn btn-emerald">Register</a>
             <?php else: ?>
-                <!-- Guest Navbar -->
-                <div class="d-flex gap-2 ms-auto">
-                    <a href="login.php" class="btn <?= $currentPage === 'login.php' ? 'btn-emerald' : 'btn-outline-success' ?>">Login</a>
-                    <a href="register.php" class="btn <?= $currentPage === 'register.php' ? 'btn-emerald' : 'btn-outline-success' ?>">Register</a>
-                </div>
+                <!-- Highlight active page -->
+                <a href="login.php" class="btn <?= $currentPage === 'login.php' ? 'btn-emerald' : 'btn-outline-success' ?>">Login</a>
+                <a href="register.php" class="btn <?= $currentPage === 'register.php' ? 'btn-emerald' : 'btn-outline-success' ?>">Register</a>
             <?php endif; ?>
         </div>
     </div>
