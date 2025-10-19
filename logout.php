@@ -7,7 +7,6 @@ $_SESSION = [];
 
 // Destroy the session
 session_destroy();
-
-// Redirect to index.php
-header("Location: index.php");
+header("Location: login.php");
 exit;
+    
