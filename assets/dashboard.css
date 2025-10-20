@@ -318,6 +318,12 @@ body {
   flex-grow: 1;
 }
 
+.notification-item.unread {
+  background-color: #f8f9fa;
+  font-weight: 500;
+}
+
+
 .notification-bell {
   font-size: 1.5rem;
   color: #6c757d;
