@@ -36,6 +36,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['like_post_id'])) {
             $pdo->prepare("INSERT INTO likes (user_id, post_type, post_id) VALUES (?, 'community', ?)")->execute([$userId, $postId]);
             $liked = true;
         }
+        if ($liked) {
+            // Get post owner
+            $stmt = $pdo->prepare("SELECT user_id, title FROM posts WHERE id = ?");
+            $stmt->execute([$postId]);
+            $post = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($post && $post['user_id'] != $userId) {
+                $postOwnerId = $post['user_id'];
+                $postTitle = $post['title'];
+
+                // Get liker name
+                $likerName = $_SESSION['currentUser']['name'] ?? 'Someone';
+                $initials = strtoupper(substr($likerName, 0, 2));
+                $avatarColor = 'success'; // You can randomize or assign based on user
+
+                // Insert notification
+                $notify = $pdo->prepare("INSERT INTO notifications (user_id, sender_name, message, avatar_color, initials) VALUES (?, ?, ?, ?, ?)");
+                $notify->execute([
+                    $postOwnerId,
+                    $likerName,
+                    "liked your post: \"$postTitle\"",
+                    $avatarColor,
+                    $initials
+                ]);
+            }
+        }
 
         // Get updated like count
         $count = $pdo->prepare("SELECT COUNT(*) FROM likes WHERE post_type = 'community' AND post_id = ?");
@@ -55,4 +81,3 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['like_post_id'])) {
     http_response_code(400);
     echo json_encode(['success' => false, 'error' => 'Invalid request']);
 }
-?>

@@ -117,17 +117,44 @@ if (
 }
 
 
-// 📥 Fetch posts
-$stmt = $pdo->query("
+// // 📥 Fetch posts
+// $stmt = $pdo->query("
+//     SELECT p.*, u.first_name, u.last_name, u.role,
+//         (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id) AS total_likes,
+//         (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id) AS total_comments,
+//         (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id) AS total_bookmarks
+//     FROM community_posts p
+//     LEFT JOIN users u ON p.created_by = u.id
+//     ORDER BY p.is_pinned DESC, p.created_at DESC
+// ");
+// $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// 📅 Fetch unpinned post
+$stmtUnpinned = $pdo->query("
     SELECT p.*, u.first_name, u.last_name, u.role,
         (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id) AS total_likes,
         (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id) AS total_comments,
         (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id) AS total_bookmarks
     FROM community_posts p
     LEFT JOIN users u ON p.created_by = u.id
-    ORDER BY p.is_pinned DESC, p.created_at DESC
+    WHERE p.is_pinned = 0
+    ORDER BY p.created_at DESC
 ");
-$posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$posts = $stmtUnpinned->fetchAll(PDO::FETCH_ASSOC);
+
+// 📅 Fetch pinned posts
+$stmtPinned = $pdo->query("
+    SELECT p.*, u.first_name, u.last_name, u.role,
+        (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id) AS total_likes,
+        (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id) AS total_comments,
+        (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id) AS total_bookmarks
+    FROM community_posts p
+    LEFT JOIN users u ON p.created_by = u.id
+    WHERE p.is_pinned = 1
+    ORDER BY p.created_at DESC
+");
+$pinnedPosts = $stmtPinned->fetchAll(PDO::FETCH_ASSOC);
+
 
 // 💬 Fetch comments per post
 function getComments($pdo, $postId)
@@ -241,44 +268,35 @@ function getComments($pdo, $postId)
                     <input id="searchInput" type="text" class="form-control border-start-0" placeholder="Search announcements...">
                 </div>
             </div>
+            <div>
+                <select id="sortSelect" class="form-select form-select">
+                    <option value="newest">Newest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="mostLiked">Most Liked</option>
+                    <option value="mostCommented">Most Commented</option>
+                </select>
+            </div>
 
             <!-- 🔔 Notifications & Profile -->
             <div class="d-flex align-items-center gap-3">
 
                 <!-- Notification Bell -->
                 <div class="dropdown position-relative">
-                    <button class="btn border-0 p-0 position-relative" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
+                    <button class="btn border-0 p-0 position-relative" type="button" data-bs-toggle="dropdown" aria-expanded="false" data-bs-auto-close="false" title="Notifications">
                         <i class="bi bi-bell-fill fs-5 text-dark"></i>
-                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
-                            3
+                        <span id="notificationBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">
+                            <span id="unreadCount">0</span>
                             <span class="visually-hidden">unread notifications</span>
                         </span>
                     </button>
+
                     <ul class="dropdown-menu dropdown-menu-end notifications-dropdown shadow-sm p-0 mt-2" style="min-width: 300px;">
                         <li class="p-3 border-bottom fw-bold">Notifications</li>
-                        <li><a class="dropdown-item notification-item d-flex gap-2 p-3" href="#">
-                                <div class="avatar bg-primary text-white fw-bold">JD</div>
-                                <div>
-                                    <p class="mb-1"><strong>John Doe</strong> commented on your post: <em>"Great initiative!"</em></p>
-                                    <small class="text-muted">2 hours ago</small>
-                                </div>
-                            </a></li>
-                        <li><a class="dropdown-item notification-item d-flex gap-2 p-3" href="#">
-                                <div class="avatar bg-info text-white fw-bold">CM</div>
-                                <div>
-                                    <p class="mb-1"><strong>Council Member</strong> created a new alert: <em>"Road closure on Elm Street..."</em></p>
-                                    <small class="text-muted">1 hour ago</small>
-                                </div>
-                            </a></li>
-                        <li><a class="dropdown-item notification-item d-flex gap-2 p-3" href="#">
-                                <div class="avatar bg-success text-white fw-bold">M</div>
-                                <div>
-                                    <p class="mb-1"><strong>Maria</strong> liked your comment on <em>"Need volunteers..."</em></p>
-                                    <small class="text-muted">5 hours ago</small>
-                                </div>
-                            </a></li>
+                        <!-- ✅ Direct injection target -->
+                        <ul id="notificationList" class="list-unstyled m-0"></ul>
                         <li><a class="dropdown-item text-center small p-2" href="#">View all notifications</a></li>
                     </ul>
+
                 </div>
 
                 <!-- Profile Dropdown -->
@@ -420,7 +438,7 @@ function getComments($pdo, $postId)
 
 
                         ?>
-                        <div id="post-<?= $postId; ?>" class="post-card mb-3" data-post-tag="<?= $postTag; ?>">
+                        <div id="post-<?= $postId; ?>" class="post-card mb-3" data-post-tag="<?= $postTag; ?>" data-post-likes="<?= (int)$postLikes; ?>" data-post-comments=" <?= $postComments; ?>" data-post-time="<?= $postTime; ?>">
                             <div class="d-flex gap-3">
                                 <div class="avatar"><?= strtoupper(substr($postUser, 0, 1)); ?></div>
                                 <div class="w-100">
@@ -434,8 +452,8 @@ function getComments($pdo, $postId)
                                             <?php if (!empty($postTitle)): ?>
                                                 <h5 class="post-title"><?= htmlspecialchars($postTitle); ?></h5>
                                             <?php else: ?>
-                                                <h6 class="text-muted post-title">Untitled Post</h5>
-                                                <?php endif; ?>
+                                                <h5 class="text-muted post-title">Untitled Post</h5>
+                                            <?php endif; ?>
                                         </div>
                                         <div class="d-flex align-items-center gap-2">
                                             <span class="badge <?= $tagClass; ?>"><?= htmlspecialchars($postTag, ENT_NOQUOTES); ?></span>
@@ -600,6 +618,29 @@ function getComments($pdo, $postId)
                         <li class="list-group-item text-center"><a href="#">View All Events</a></li>
                     </ul>
                 </div>
+                <?php if (!empty($pinnedPosts)): ?>
+                    <div class="card pinned-panel mt-4">
+                        <div class="card-header"><i class="bi bi-pin-angle me-2"></i> Pinned Posts</div>
+                        <ul class="list-group list-group-flush">
+                            <?php foreach ($pinnedPosts as $post): ?>
+                                <?php
+                                $postId = $post['id'];
+                                $postUser = trim($post['first_name'] . ' ' . $post['last_name']) ?: 'Anonymous';
+                                $postTitle = $post['title'] ?? 'Untitled';
+                                $postTime = date('M d, Y H:i', strtotime($post['created_at']));
+                                $postTag = $post['category'] ?? 'General';
+                                $tagClass = $tagClassMap[$postTag] ?? 'tag-general';
+                                ?>
+                                <li class="list-group-item pinned-card m-2">
+                                    <span class="badge <?= $tagClass; ?>"><?= htmlspecialchars($postTag, ENT_NOQUOTES); ?></span>
+                                    <h6 class="fw-bold mb-1"><?= sane($postTitle); ?></h6>
+                                    <p class="mb-0 small text-muted"><i class="bi bi-person me-1"></i> <?= sane($postUser); ?></p>
+                                    <p class="mb-0 small text-muted"><i class="bi bi-clock me-1"></i> <?= sane($postTime); ?></p>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -613,20 +654,180 @@ function getComments($pdo, $postId)
             const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
             [...tooltipTriggerList].forEach(el => new bootstrap.Tooltip(el));
 
-            // 🔍 Post Filter Logic
+            // ✅ Define getPostData()
+            function getPostData(postEl) {
+                return {
+                    el: postEl,
+                    title: postEl.querySelector('.post-title')?.textContent.toLowerCase() || '',
+                    content: postEl.querySelector('.post-content-text')?.textContent.toLowerCase() || '',
+                    tag: postEl.getAttribute('data-post-tag'),
+                    likes: parseInt(postEl.getAttribute('data-post-likes') || '0'),
+                    comments: parseInt(postEl.getAttribute('data-post-comments') || '0'),
+                    timestamp: new Date(postEl.getAttribute('data-post-time'))
+                };
+            }
+
+            // ✅ Global cache for all posts
+            let allPosts = [];
+            // On initial load, cache all posts
             const postsContainer = document.getElementById('postsContainer');
+            const searchInput = document.getElementById('searchInput');
+            const sortSelect = document.getElementById('sortSelect');
             const filterButtons = document.querySelectorAll('.filter-button-group .btn');
+
+            allPosts = Array.from(postsContainer.querySelectorAll('.post-card')).map(getPostData); // ✅ Cache full list
+            renderPosts(); // ✅ Initial render
+
+            // 🔍 Extract post data for sorting/filtering
+            function getPostData(postEl) {
+                return {
+                    el: postEl,
+                    title: postEl.querySelector('.post-title')?.textContent.toLowerCase() || '',
+                    content: postEl.querySelector('.post-content-text')?.textContent.toLowerCase() || '',
+                    tag: postEl.getAttribute('data-post-tag'),
+                    likes: parseInt(postEl.getAttribute('data-post-likes') || '0'),
+                    comments: parseInt(postEl.getAttribute('data-post-comments') || '0'),
+                    timestamp: new Date(postEl.getAttribute('data-post-time'))
+                };
+            }
+
+            // 🔁 Rebind interactions after render
+            function bindPostInteractions() {
+                // ❤️ Like
+                document.querySelectorAll('.btn-like').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const postId = this.getAttribute('data-post-id');
+                        console.log('Like clicked:', postId);
+                        // Add your AJAX or toggle logic here
+                    });
+                });
+
+                // 🔖 Bookmark
+                document.querySelectorAll('.btn-bookmark').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const postId = this.getAttribute('data-post-id');
+                        console.log('Bookmark clicked:', postId);
+                        // Add your bookmark logic here
+                    });
+                });
+
+                // 💬 Comment (if applicable)
+                document.querySelectorAll('.btn-comment').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const postId = this.getAttribute('data-post-id');
+                        console.log('Comment clicked:', postId);
+                        // Add your comment logic here
+                    });
+                });
+
+                // ✏️ Edit
+                document.querySelectorAll('.edit-post-btn').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const postId = this.getAttribute('data-index');
+                        const title = this.getAttribute('data-title');
+                        const content = this.getAttribute('data-content');
+                        document.getElementById('editPostTitle').value = title;
+                        document.getElementById('editPostContent').value = content;
+                        document.getElementById('editPostId').value = postId;
+                    });
+                });
+            }
+
+            // 🔍 Search, 🔃 Sort, 🏷️ Filter Logic
+            function renderPosts() {
+                const query = searchInput.value.toLowerCase();
+                const selectedTag = document.querySelector('.filter-button-group .btn.active')?.getAttribute('data-tag') || '';
+                const sortBy = sortSelect.value;
+
+                const posts = allPosts // ✅ Always filter from full list
+                    .filter(post =>
+                        (!selectedTag || post.tag === selectedTag) &&
+                        (post.title.includes(query) || post.content.includes(query))
+                    );
+
+                posts.sort((a, b) => {
+                    if (sortBy === 'newest') return b.timestamp - a.timestamp;
+                    if (sortBy === 'oldest') return a.timestamp - b.timestamp;
+                    if (sortBy === 'mostLiked') return b.likes - a.likes;
+                    if (sortBy === 'mostCommented') return b.comments - a.comments;
+                    return 0;
+                });
+
+                postsContainer.innerHTML = '';
+                posts.forEach(post => postsContainer.appendChild(post.el));
+                bindPostInteractions(); // ✅ Rebind buttons after render
+            }
+
+            // 🔍 Search
+            searchInput.addEventListener('input', renderPosts);
+
+            // 🔃 Sort
+            sortSelect.addEventListener('change', renderPosts);
+
+            // 🏷️ Filter
             filterButtons.forEach(button => {
                 button.addEventListener('click', function() {
                     filterButtons.forEach(btn => btn.classList.remove('active'));
                     this.classList.add('active');
-                    const selectedTag = this.getAttribute('data-tag');
-                    postsContainer.querySelectorAll('.post-card').forEach(post => {
-                        const postTag = post.getAttribute('data-post-tag');
-                        post.style.display = (!selectedTag || postTag === selectedTag) ? '' : 'none';
-                    });
+                    renderPosts();
                 });
             });
+
+            // 🚀 Initial render
+            renderPosts();
+
+            // 🔔 Notification Badge & Read Status + Fetching
+            const bellButton = document.querySelector('[data-bs-toggle="dropdown"]');
+            const badge = document.getElementById('notificationBadge');
+            const unreadCount = document.getElementById('unreadCount');
+            const notificationList = document.getElementById('notificationList');
+
+            function loadNotifications() {
+                fetch('fetch_notifications.php')
+                    .then(res => res.json())
+                    .then(data => {
+                        console.log('🔔 Fetched notifications:', data); // ✅ Log the response array
+                        const notificationList = document.getElementById('notificationList');
+                        console.log('🔔 Injecting into:', notificationList); // ✅ Confirm the target container
+
+                        if (Array.isArray(data) && data.length > 0) {
+                            data.forEach(n => {
+                                const item = document.createElement('li');
+                                item.innerHTML = `
+              <a class="dropdown-item notification-item unread d-flex gap-2 p-3" href="#">
+                <div class="avatar bg-${n.avatar_color} text-white fw-bold">${n.initials}</div>
+                <div>
+                  <p class="mb-1"><strong>${n.sender_name}</strong> ${n.message}</p>
+                  <small class="text-muted">${n.created_at}</small>
+                </div>
+              </a>
+            `;
+                                notificationList.appendChild(item);
+                            });
+
+                            // Show badge and update count
+                            badge.classList.remove('d-none');
+                            unreadCount.textContent = data.length;
+                        } else {
+                            notificationList.innerHTML = '<li class="p-3 text-muted">No notifications</li>';
+                            badge.classList.add('d-none');
+                        }
+                    });
+            }
+
+            // 🔔 When dropdown is clicked
+            bellButton.addEventListener('click', function() {
+                console.log('🔔 Bell clicked — loading notifications...');
+                loadNotifications();
+
+                // // Mark notifications as read
+                // fetch('mark_notifications.php', {
+                //     method: 'POST'
+                // }).then(() => {
+                //     badge.classList.add('d-none');
+                // });
+            });
+
 
 
             // 🧠 POST EDIT & DELETE HANDLER
@@ -992,6 +1193,7 @@ function getComments($pdo, $postId)
             window.showCustomAlert = function(message) {
                 alert(message);
             };
+
         });
     </script>
 </body>

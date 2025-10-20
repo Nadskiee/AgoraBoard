@@ -2,8 +2,6 @@
 session_start();
 require_once 'db_connect.php';
 header('Content-Type: application/json');
-
-// ✅ Enable error reporting for debugging
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -25,8 +23,8 @@ if (!$userId || !$postId || $text === '') {
   exit;
 }
 
-// ✅ Insert comment
 try {
+  // ✅ Insert comment
   $stmt = $pdo->prepare("INSERT INTO comments (post_type, post_id, user_id, content) VALUES ('community', ?, ?, ?)");
   $stmt->execute([$postId, $userId, $text]);
 
@@ -41,6 +39,55 @@ try {
   $last = trim($user['last_name'] ?? '');
   $userName = htmlspecialchars(($first || $last) ? "$first $last" : 'Anonymous');
   $avatar = strtoupper(substr($userName, 0, 1));
+
+  // ✅ Safe notification block
+  try {
+    $stmt = $pdo->prepare("SELECT created_by AS user_id, title FROM community_posts WHERE id = ?");
+    $stmt->execute([$postId]);
+    $post = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($post && $post['user_id'] != $userId) {
+      $postOwnerId = $post['user_id'];
+      $postTitle = $post['title'] ?? 'your post';
+      $initials = strtoupper(substr($userName, 0, 2));
+      $avatarColor = 'info';
+
+      $message = 'commented on your post: "' . htmlspecialchars($postTitle, ENT_QUOTES) . '"';
+
+      $notify = $pdo->prepare("
+    INSERT INTO notifications (
+        user_id,
+        sender_name,
+        message,
+        avatar_color,
+        initials,
+        type,
+        post_id,
+        post_type
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+");
+
+      $success = $notify->execute([
+        $postOwnerId,   // recipient of the notification
+        $userName,      // sender name
+        $message,       // e.g. "$userName commented on your post"
+        $avatarColor,   // sender's avatar color
+        $initials,      // sender's initials
+        'comment',      // type of notification
+        $postId,        // ID of the post being interacted with
+        $postType       // dynamic: 'community', 'event', 'job', etc.
+      ]);
+
+
+      if (!$success) {
+        error_log("❌ Notification insert failed for post ID $postId by user $userId");
+        error_log("❌ PDO error: " . implode(" | ", $notify->errorInfo()));
+      }
+    }
+  } catch (PDOException $e) {
+    error_log("Notification insert failed: " . $e->getMessage());
+  }
+
 
   // ✅ Build comment HTML
   $commentHTML = '
@@ -80,6 +127,7 @@ try {
 
   echo json_encode(['success' => true, 'html' => $commentHTML]);
 } catch (PDOException $e) {
+  error_log("Database error: " . $e->getMessage());
   http_response_code(500);
   echo json_encode(['success' => false, 'error' => 'Database error']);
 }
