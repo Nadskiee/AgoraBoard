@@ -3,6 +3,10 @@ session_start();
 require_once 'db_connect.php';
 header('Content-Type: application/json');
 
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+error_reporting(E_ALL);
+
 // Validate AJAX request
 if (strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== 'xmlhttprequest') {
     http_response_code(403);
@@ -38,12 +42,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['like_post_id'])) {
         }
         if ($liked) {
             // Get post owner
-            $stmt = $pdo->prepare("SELECT user_id, title FROM posts WHERE id = ?");
+            $stmt = $pdo->prepare("SELECT created_by, title FROM community_posts WHERE id = ?");
             $stmt->execute([$postId]);
             $post = $stmt->fetch(PDO::FETCH_ASSOC);
+            $postOwnerId = $post['created_by'];
 
-            if ($post && $post['user_id'] != $userId) {
-                $postOwnerId = $post['user_id'];
+            if ($post && $post['created_by'] != $userId) {
+                $postOwnerId = $post['created_by'];
                 $postTitle = $post['title'];
 
                 // Get liker name
@@ -74,10 +79,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['like_post_id'])) {
             'total_likes' => $totalLikes
         ]);
     } catch (PDOException $e) {
+        error_log("Like error: " . $e->getMessage());
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'Database error']);
     }
 } else {
     http_response_code(400);
     echo json_encode(['success' => false, 'error' => 'Invalid request']);
+    exit;
 }

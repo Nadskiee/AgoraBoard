@@ -1,229 +1,447 @@
 <?php
 session_start();
+require_once 'db_connect.php';
+
+// 🛡️ Auth check
+if (!isset($_SESSION['currentUser'])) {
+  header("Location: login.php");
+  exit;
+}
+$currentUser = $_SESSION['currentUser'];
+$userId = $currentUser['id'] ?? null;
+
+function sane($s)
+{
+  return htmlspecialchars(trim($s ?? ''), ENT_QUOTES, 'UTF-8');
+}
+
+// 📅 Determine current month and year
+$month = isset($_GET['month']) ? (int)$_GET['month'] : date('n');
+$year  = isset($_GET['year']) ? (int)$_GET['year'] : date('Y');
+$firstDayOfMonth = strtotime("$year-$month-01");
+$totalDays = date('t', $firstDayOfMonth);
+$monthName = date('F', $firstDayOfMonth);
+$startWeekday = date('w', $firstDayOfMonth); // 0 (Sun) - 6 (Sat)
+
+// 🎉 Fetch events for this month
+$stmt = $pdo->prepare("
+    SELECT id, title, description, event_date, location
+    FROM events
+    WHERE MONTH(event_date) = ? AND YEAR(event_date) = ?
+    ORDER BY event_date ASC
+");
+$stmt->execute([$month, $year]);
+$events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$eventDays = [];
+foreach ($events as $event) {
+  $day = (int)date('j', strtotime($event['event_date']));
+  $eventDays[$day][] = $event;
+}
+
+// 🟢 Handle Create Event form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  $title = trim($_POST['title']);
+  $description = trim($_POST['description']);
+  $event_date = $_POST['event_date'];
+  $location = trim($_POST['location']);
+
+  $pdo->beginTransaction();
+  try {
+    // Insert event
+    $stmt = $pdo->prepare("INSERT INTO events (title, description, event_date, location, created_by) VALUES (?, ?, ?, ?, ?)");
+    $stmt->execute([$title, $description, $event_date, $location, $userId]);
+    $eventId = $pdo->lastInsertId();
+
+    // Auto add creator as attendee
+    $attendeeStmt = $pdo->prepare("INSERT INTO event_attendees (event_id, user_id, status) VALUES (?, ?, 'confirmed')");
+    $attendeeStmt->execute([$eventId, $userId]);
+
+    $pdo->commit();
+    header("Location: event.php?success=1");
+    exit;
+  } catch (Exception $e) {
+    $pdo->rollBack();
+    die("Error creating event: " . $e->getMessage());
+  }
+}
 ?>
-<!DOCTYPE html>
+
+<!doctype html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Events - AgoraBoard</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgoraBoard - Events</title>
+  <link rel="stylesheet" href="assets/dashboard.css?v=<?= time(); ?>">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
   <style>
-    :root {
-      --emerald-50: #ecfdf5;
-      --emerald-100: #d1fae5;
-      --emerald-500: #10b981;
-      --emerald-600: #059669;
-      --emerald-700: #047857;
-      --secondary-text: #6b7280;
-    }
-
-    body {
-      font-family: 'Inter', sans-serif;
-      background-color: #f8f9fa;
-    }
-    
-    .hero-section {
-        background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url('https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=2070&auto=format&fit=crop') no-repeat center center;
-        background-size: cover;
-        padding: 6rem 0;
-        border-radius: 1.5rem;
-        margin-bottom: 2.5rem;
-    }
-    
-    .hero-section h1 {
-        font-size: 3.5rem;
-    }
-
-    .header-controls {
-        background-color: rgba(255,255,255,0.9);
-        backdrop-filter: blur(10px);
-        padding: 1.5rem;
-        border-radius: 1rem;
-        box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-        margin-top: 2rem;
-    }
-    
-    .btn-action {
-      background-color: var(--emerald-500);
-      border: none;
-      font-weight: 600;
-      border-radius: 8px;
-      padding: 0.6rem 1.5rem;
-      color: white;
-      transition: background-color 0.2s ease;
-    }
-    .btn-action:hover {
-      background-color: var(--emerald-600);
-      color: white;
-    }
-
-    .btn-back {
-        color: var(--emerald-700);
-        font-weight: 600;
-        transition: color 0.2s;
-        background-color: white;
-        padding: 0.5rem 1rem;
-        border-radius: 8px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-    }
-    .btn-back:hover {
-        color: var(--emerald-600);
-        background-color: #f8f9fa;
-    }
-    
-    .event-card {
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 15px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-      transition: box-shadow 0.3s ease, transform 0.3s ease;
+    .calendar {
+      width: 100%;
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
       overflow: hidden;
+    }
+
+    .calendar th {
+      text-align: center;
+      background: var(--sage-light);
+      color: white;
+      padding: 10px;
+    }
+
+    .calendar td {
+      height: 100px;
+      vertical-align: top;
+      padding: 6px;
+      border: 1px solid #eee;
       position: relative;
-    }
-    .event-card:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 10px 30px rgba(16, 185, 129, 0.1);
-    }
-    .event-card img {
-        height: 160px;
-        object-fit: cover;
-    }
-    .event-card .card-body {
-        padding: 1rem;
-    }
-    .price-tag {
-        position: absolute;
-        top: 10px;
-        left: 10px;
-        background-color: rgba(0,0,0,0.6);
-        color: white;
-        padding: 0.25rem 0.6rem;
-        font-size: 0.75rem;
-        font-weight: 600;
-        border-radius: 20px;
+      cursor: pointer;
     }
 
-    .btn-attend {
-        background-color: var(--emerald-100);
-        color: var(--emerald-700);
-        font-weight: 600;
-    }
-    .btn-attend:hover {
-        background-color: #a7f3d0;
-        color: var(--emerald-700);
+    .calendar td.empty {
+      background-color: #f9f9f9;
     }
 
+    .calendar .day-number {
+      font-weight: bold;
+      font-size: 0.9rem;
+    }
+
+    .calendar .event-item {
+      font-size: 0.85rem;
+      color: var(--sage-dark);
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .calendar .event-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--sage);
+    }
+
+    .event-modal .modal-content {
+      border-radius: 16px;
+    }
   </style>
 </head>
+
 <body>
-  <div class="container py-4">
-     <div class="mb-4">
-        <a href="dashboard.php" class="btn btn-link btn-back text-decoration-none p-0">
-            <i class="fas fa-arrow-left me-2"></i> Back to Dashboard
+  <!-- 🧭 Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-content">
+      <h4 class="mb-4"><i class="bi bi-people-fill me-2"></i> AgoraBoard</h4>
+      <nav class="nav flex-column">
+        <a href="dashboard.php" class="nav-link"><i class="bi bi-house-door"></i> Dashboard</a>
+        <a href="public-safety.php" class="nav-link"><i class="bi bi-shield-exclamation"></i> Public Safety</a>
+        <a href="lost-and-found.php" class="nav-link"><i class="bi bi-search"></i> Lost & Found</a>
+        <a href="event.php" class="nav-link active"><i class="bi bi-calendar-event"></i> Events</a>
+        <a href="jobs.php" class="nav-link"><i class="bi bi-briefcase"></i> Jobs</a>
+        <a href="polls_view.php" class="nav-link"><i class="bi bi-bar-chart-line"></i> Polls</a>
+        <a href="volunteering.php" class="nav-link"><i class="bi bi-heart"></i> Volunteering</a>
+        <hr class="my-3 border-white opacity-25">
+        <a href="bookmarks_view.php" class="nav-link"><i class="bi bi-bookmark"></i> Bookmarks</a>
+        <a href="#" class="nav-link"><i class="bi bi-gear"></i> Settings</a>
+      </nav>
+    </div>
+
+    <div class="sidebar-footer">
+      <form action="logout.php" method="POST" id="logoutForm">
+        <input type="hidden" name="logout" value="1">
+        <button type="button" class="nav-link logout-btn w-100 text-start" onclick="confirmLogout()">
+          <i class="bi bi-box-arrow-right"></i> Logout
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 🗓️ Main Content -->
+  <div class="main-content">
+    <div class="main-header mb-4">
+      <h3 class="fw-bold"><i class="bi bi-calendar-event me-2"></i> Events Calendar</h3>
+    </div>
+
+    <!-- 🔄 Month navigation + Create Event -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="d-flex align-items-center gap-2">
+        <a href="?month=<?= ($month == 1 ? 12 : $month - 1); ?>&year=<?= ($month == 1 ? $year - 1 : $year); ?>" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-chevron-left"></i> Prev
         </a>
+        <h5 class="fw-bold mb-0"><?= "$monthName $year"; ?></h5>
+        <a href="?month=<?= ($month == 12 ? 1 : $month + 1); ?>&year=<?= ($month == 12 ? $year + 1 : $year); ?>" class="btn btn-sm btn-outline-secondary">
+          Next <i class="bi bi-chevron-right"></i>
+        </a>
+      </div>
+      <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createEventModal">
+        <i class="bi bi-plus-circle"></i> Create Event
+      </button>
     </div>
 
-    <div class="hero-section text-white text-center">
-        <h1 class="fw-bold display-4">Find Your Next Event</h1>
-        <p class="lead">Discover workshops, gatherings, and celebrations near you.</p>
-        <div class="row justify-content-center">
-            <div class="col-lg-8">
-                <div class="header-controls">
-                    <div class="row g-2">
-                        <div class="col-lg-8">
-                            <input type="search" class="form-control" placeholder="Search events by name or location...">
-                        </div>
-                        <div class="col-lg-4">
-                            <select class="form-select">
-                                <option selected>All Categories</option>
-                                <option value="1">Music</option>
-                                <option value="2">Workshops</option>
-                                <option value="3">Community</option>
-                                <option value="4">Food & Drink</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
+    <!-- 📅 Calendar -->
+    <table class="calendar table table-bordered text-center align-middle">
+      <thead>
+        <tr>
+          <th>Sun</th>
+          <th>Mon</th>
+          <th>Tue</th>
+          <th>Wed</th>
+          <th>Thu</th>
+          <th>Fri</th>
+          <th>Sat</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php
+        $day = 1;
+        $rows = ceil(($totalDays + $startWeekday) / 7);
+        for ($i = 0; $i < $rows; $i++) {
+          echo "<tr>";
+          for ($j = 0; $j < 7; $j++) {
+            $cellIndex = $i * 7 + $j;
+            if ($cellIndex < $startWeekday || $day > $totalDays) {
+              echo '<td class="empty"></td>';
+            } else {
+              $hasEvents = isset($eventDays[$day]);
+              echo '<td class="' . ($hasEvents ? 'has-event' : '') . '" data-day="' . $day . '">';
+              echo '<div class="day-number">' . $day . '</div>';
+              if ($hasEvents) {
+                foreach ($eventDays[$day] as $ev) {
+                  echo '<div class="event-item"
+                                            data-id="' . $ev['id'] . '"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#eventModal"
+                                            data-title="' . sane($ev['title']) . '"
+                                            data-description="' . sane($ev['description']) . '"
+                                            data-date="' . sane($ev['event_date']) . '"
+                                            data-location="' . sane($ev['location']) . '">
+                                            <span class="event-dot"></span>' . sane($ev['title']) . '
+                                          </div>';
+                }
+              }
+              echo '</td>';
+              $day++;
+            }
+          }
+          echo "</tr>";
+        }
+        ?>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 🗓️ Create Event Modal -->
+  <div class="modal fade" id="createEventModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content p-3 border-0 shadow-sm">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold"><i class="bi bi-calendar-plus me-2"></i>Create New Event</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <form method="POST" action="event.php" class="mt-3">
+          <div class="modal-body">
+            <div class="mb-3">
+              <label for="title" class="form-label fw-semibold">Event Title</label>
+              <input type="text" name="title" id="title" class="form-control" required>
             </div>
-        </div>
+            <div class="mb-3">
+              <label for="description" class="form-label fw-semibold">Description</label>
+              <textarea name="description" id="description" class="form-control" rows="3" required></textarea>
+            </div>
+            <div class="mb-3">
+              <label for="event_date" class="form-label fw-semibold">Date</label>
+              <input type="date" name="event_date" id="event_date" class="form-control" required>
+            </div>
+            <div class="mb-3">
+              <label for="location" class="form-label fw-semibold">Location</label>
+              <input type="text" name="location" id="location" class="form-control">
+            </div>
+          </div>
+          <div class="modal-footer border-0 pt-0">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-success">Create Event</button>
+          </div>
+        </form>
+      </div>
     </div>
-    
-    <h3 class="fw-bold mb-4">Upcoming Events</h3>
-    <!-- Grid of Events -->
-    <div class="row">
-      <div class="col-lg-3 col-md-4 col-sm-6 mb-4">
-        <div class="card event-card h-100 d-flex flex-column">
-          <img src="https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?q=80&w=2070&auto=format&fit=crop" class="card-img-top" alt="Music Festival">
-           <div class="price-tag">FREE</div>
-          <div class="card-body flex-grow-1">
-            <h6 class="card-title fw-bold mb-2">City Music Festival</h6>
-            <p class="card-text text-secondary small mb-1"><i class="fas fa-calendar-alt me-2 text-muted"></i>Nov 5, 2025</p>
-            <p class="card-text text-secondary small mb-2"><i class="fas fa-map-marker-alt me-2 text-muted"></i>Downtown Plaza</p>
-             <p class="card-text text-secondary small"><i class="fas fa-users me-2 text-muted"></i>120 Attendees</p>
-          </div>
-           <div class="card-footer bg-white border-0 p-3">
-             <button class="btn btn-attend w-100 btn-sm">I'm Going!</button>
-           </div>
-        </div>
-      </div>
+  </div>
 
-       <div class="col-lg-3 col-md-4 col-sm-6 mb-4">
-        <div class="card event-card h-100 d-flex flex-column">
-          <img src="https://images.unsplash.com/photo-1556761175-5973dc0f32e7?q=80&w=1932&auto=format&fit=crop" class="card-img-top" alt="Tech Workshop">
-           <div class="price-tag">$25.00</div>
-          <div class="card-body flex-grow-1">
-            <h6 class="card-title fw-bold mb-2">UI/UX Design Workshop</h6>
-            <p class="card-text text-secondary small mb-1"><i class="fas fa-calendar-alt me-2 text-muted"></i>Nov 12, 2025</p>
-            <p class="card-text text-secondary small mb-2"><i class="fas fa-map-marker-alt me-2 text-muted"></i>Innovation Hub</p>
-            <p class="card-text text-secondary small"><i class="fas fa-users me-2 text-muted"></i>45 Attendees</p>
-          </div>
-           <div class="card-footer bg-white border-0 p-3">
-             <button class="btn btn-attend w-100 btn-sm">I'm Going!</button>
-           </div>
+  <!-- 🪩 Event Details Modal -->
+  <div class="modal fade event-modal" id="eventModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content p-3">
+        <div class="modal-header border-0">
+          <h5 class="modal-title fw-bold" id="eventTitle"></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
-      </div>
+        <div class="modal-body">
+          <p><i class="bi bi-calendar-event me-2"></i><strong>Date:</strong> <span id="eventDate"></span></p>
+          <p><i class="bi bi-geo-alt me-2"></i><strong>Location:</strong> <span id="eventLocation"></span></p>
+          <p><i class="bi bi-info-circle me-2"></i><strong>Details:</strong></p>
+          <p id="eventDescription" class="text-muted mb-3"></p>
 
-       <div class="col-lg-3 col-md-4 col-sm-6 mb-4">
-        <div class="card event-card h-100 d-flex flex-column">
-          <img src="https://images.unsplash.com/photo-1529224424268-912b317b9b39?q=80&w=2070&auto=format&fit=crop" class="card-img-top" alt="Food Market">
-          <div class="price-tag">FREE</div>
-          <div class="card-body flex-grow-1">
-            <h6 class="card-title fw-bold mb-2">Weekend Farmers Market</h6>
-            <p class="card-text text-secondary small mb-1"><i class="fas fa-calendar-alt me-2 text-muted"></i>Nov 15, 2025</p>
-            <p class="card-text text-secondary small mb-2"><i class="fas fa-map-marker-alt me-2 text-muted"></i>Community Park</p>
-            <p class="card-text text-secondary small"><i class="fas fa-users me-2 text-muted"></i>250+ Attendees</p>
-          </div>
-           <div class="card-footer bg-white border-0 p-3">
-             <button class="btn btn-attend w-100 btn-sm">I'm Going!</button>
-           </div>
-        </div>
-      </div>
+          <div class="attendees-section border-top pt-3">
+            <h6 class="fw-bold mb-2"><i class="bi bi-people-fill me-2"></i>Attendees</h6>
+            <div id="attendeesList" class="d-flex flex-wrap gap-2 small text-secondary">
+              <em>Loading...</em>
+            </div>
 
-      <div class="col-lg-3 col-md-4 col-sm-6 mb-4">
-        <div class="card event-card h-100 d-flex flex-column">
-          <img src="https://images.unsplash.com/photo-1511578314322-379afb476865?q=80&w=2070&auto=format&fit=crop" class="card-img-top" alt="Conference">
-          <div class="price-tag">$75.00</div>
-          <div class="card-body flex-grow-1">
-            <h6 class="card-title fw-bold mb-2">Future of Tech Conference</h6>
-            <p class="card-text text-secondary small mb-1"><i class="fas fa-calendar-alt me-2 text-muted"></i>Nov 20, 2025</p>
-            <p class="card-text text-secondary small mb-2"><i class="fas fa-map-marker-alt me-2 text-muted"></i>Grand Convention Center</p>
-            <p class="card-text text-secondary small"><i class="fas fa-users me-2 text-muted"></i>500+ Attendees</p>
+            <form method="POST" action="event_attend_action.php" class="mt-3" id="attendForm">
+              <input type="hidden" name="event_id" id="attendEventId">
+              <input type="hidden" name="action" id="attendAction">
+              <button type="submit" class="btn btn-outline-success w-100" id="joinBtn">
+                <i class="bi bi-person-plus"></i> Join Event
+              </button>
+            </form>
           </div>
-           <div class="card-footer bg-white border-0 p-3">
-             <button class="btn btn-attend w-100 btn-sm">I'm Going!</button>
-           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <footer class="bg-dark text-light py-4 mt-4"><div class="container text-center">&copy; 2025 AgoraBoard</div></footer>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+  <!-- ⚙️ Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let modalInstance;
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('📦 DOM fully loaded');
+      const modalElement = document.getElementById('eventModal');
+      modalInstance = new bootstrap.Modal(modalElement);
 
+      // Handle event item clicks
+      document.querySelectorAll('.event-item').forEach(item => {
+        item.addEventListener('click', async () => {
+          const eventId = item.dataset.id;
+          const title = item.dataset.title;
+          const date = item.dataset.date;
+          const desc = item.dataset.description;
+          const loc = item.dataset.location;
+
+          console.log(`📅 Event clicked: ${title} (ID: ${eventId})`);
+
+          document.getElementById('eventTitle').textContent = title;
+          document.getElementById('eventDate').textContent = new Date(date).toLocaleDateString();
+          document.getElementById('eventLocation').textContent = loc || 'N/A';
+          document.getElementById('eventDescription').textContent = desc || 'No description.';
+          document.getElementById('attendEventId').value = eventId;
+
+          try {
+            console.log('🔄 Fetching attendees...');
+            const res = await fetch(`get_attendees.php?event_id=${eventId}`);
+            const data = await res.json();
+            console.log('✅ Attendees fetched:', data);
+
+            const attendees = data.attendees || [];
+            const attendeesDiv = document.getElementById('attendeesList');
+
+            if (attendees.length > 0) {
+              attendeesDiv.innerHTML = attendees.map(a => `
+            <span class="badge bg-light text-dark border">${a.first_name} ${a.last_name}</span>
+          `).join('');
+            } else {
+              attendeesDiv.innerHTML = '<em>No attendees yet.</em>';
+            }
+
+            const joinBtn = document.getElementById('joinBtn');
+            const attendAction = document.getElementById('attendAction');
+            const isAttending = data.attending ?? attendees.some(a => a.is_current_user);
+
+            console.log(`👤 Current user is ${isAttending ? '' : 'not '}attending`);
+
+            if (isAttending) {
+              joinBtn.classList.replace('btn-outline-success', 'btn-outline-danger');
+              joinBtn.innerHTML = '<i class="bi bi-person-dash"></i> Leave Event';
+              attendAction.value = 'leave';
+            } else {
+              joinBtn.classList.replace('btn-outline-danger', 'btn-outline-success');
+              joinBtn.innerHTML = '<i class="bi bi-person-plus"></i> Join Event';
+              attendAction.value = 'join';
+            }
+
+            console.log('📣 Showing modal...');
+            modalInstance.show(); // ✅ reuse the same instance
+          } catch (err) {
+            console.error(`❌ Failed to load event ${eventId}:`, err);
+          }
+        });
+      });
+
+      // Handle form submission via AJAX
+      const attendForm = document.getElementById('attendForm');
+      attendForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const eventId = document.getElementById('attendEventId').value;
+        const action = document.getElementById('attendAction').value;
+        const joinBtn = document.getElementById('joinBtn');
+
+        console.log(`📤 Submitting attendance: ${action} for event ${eventId}`);
+
+        try {
+          const res = await fetch('event_attend_action.php', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: `event_id=${eventId}&action=${action}`
+          });
+
+          const result = await res.json();
+          console.log('✅ Attendance response:', result);
+
+          if (result.success) {
+            console.log('🔄 Re-fetching attendees...');
+            const attendeeRes = await fetch(`get_attendees.php?event_id=${eventId}`);
+            const data = await attendeeRes.json();
+            console.log('✅ Updated attendees:', data);
+
+            const attendees = data.attendees || [];
+            const attendeesDiv = document.getElementById('attendeesList');
+
+            if (attendees.length > 0) {
+              attendeesDiv.innerHTML = attendees.map(a => `
+            <span class="badge bg-light text-dark border">${a.first_name} ${a.last_name}</span>
+          `).join('');
+            } else {
+              attendeesDiv.innerHTML = '<em>No attendees yet.</em>';
+            }
+
+            const isAttending = data.attending ?? attendees.some(a => a.is_current_user);
+            document.getElementById('attendAction').value = isAttending ? 'leave' : 'join';
+
+            if (isAttending) {
+              joinBtn.classList.replace('btn-outline-success', 'btn-outline-danger');
+              joinBtn.innerHTML = '<i class="bi bi-person-dash"></i> Leave Event';
+            } else {
+              joinBtn.classList.replace('btn-outline-danger', 'btn-outline-success');
+              joinBtn.innerHTML = '<i class="bi bi-person-plus"></i> Join Event';
+            }
+
+            console.log(`🎯 Button updated: ${isAttending ? 'Leave' : 'Join'} mode`);
+          } else {
+            alert(result.error || 'Failed to update attendance.');
+            console.warn('⚠️ Attendance update failed:', result);
+          }
+        } catch (err) {
+          console.error(`❌ Failed to submit attendance for event ${eventId}:`, err);
+        }
+      });
+    });
+
+    // Logout confirmation
+    function confirmLogout() {
+      if (confirm("Are you sure you want to log out?")) {
+        document.getElementById('logoutForm').submit();
+      }
+    }
+  </script>
+</body>
+
+</html>
