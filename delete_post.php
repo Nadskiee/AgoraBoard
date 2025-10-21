@@ -27,6 +27,7 @@ try {
         $stmt->execute([$postId]);
     }
 
+
     // 🗑️ Delete the post itself
     $stmtPost = $pdo->prepare("DELETE FROM community_posts WHERE id = ? AND created_by = ?");
     $stmtPost->execute([$postId, $userId]);

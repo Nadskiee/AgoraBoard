@@ -116,19 +116,6 @@ if (
     exit;
 }
 
-
-// // 📥 Fetch posts
-// $stmt = $pdo->query("
-//     SELECT p.*, u.first_name, u.last_name, u.role,
-//         (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id) AS total_likes,
-//         (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id) AS total_comments,
-//         (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id) AS total_bookmarks
-//     FROM community_posts p
-//     LEFT JOIN users u ON p.created_by = u.id
-//     ORDER BY p.is_pinned DESC, p.created_at DESC
-// ");
-// $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
 // 📅 Fetch unpinned post
 $stmtUnpinned = $pdo->query("
     SELECT p.*, u.first_name, u.last_name, u.role,
@@ -169,6 +156,26 @@ function getComments($pdo, $postId)
     $q->execute([$postId]);
     return $q->fetchAll(PDO::FETCH_ASSOC);
 }
+
+$today = date('Y-m-d');
+
+$stmt = $pdo->prepare("
+    SELECT 
+        e.id,
+        e.title,
+        e.event_date,
+        e.location,
+        COUNT(a.user_id) AS attendees
+    FROM events e
+    LEFT JOIN event_attendees a ON e.id = a.event_id
+    WHERE e.event_date >= ?
+    GROUP BY e.id
+    ORDER BY e.event_date ASC
+    LIMIT 5
+");
+$stmt->execute([$today]);
+$events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
 ?>
 
 <!doctype html>
@@ -211,7 +218,7 @@ function getComments($pdo, $postId)
     <div class="modal fade" id="editCommentModal" tabindex="-1" aria-labelledby="editCommentModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-sm">
             <div class="modal-content">
-                <form method="POST" action="">
+                <form id="editCommentForm" method="POST" action="">
                     <div class="modal-header">
                         <h5 class="modal-title" id="editCommentModalLabel">Edit Comment</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -234,16 +241,16 @@ function getComments($pdo, $postId)
         <div>
             <h4 class="mb-4"><i class="bi bi-people-fill me-2"></i> AgoraBoard</h4>
             <nav class="nav flex-column">
-                <a href="index.php" class="nav-link active"><i class="bi bi-house-door"></i> Dashboard</a>
+                <a href="dashboard.php" class="nav-link active"><i class="bi bi-house-door"></i> Dashboard</a>
                 <a href="public-safety.php" class="nav-link"><i class="bi bi-shield-exclamation"></i> Public Safety</a>
                 <a href="lost-and-found.php" class="nav-link"><i class="bi bi-search"></i> Lost and Found</a>
                 <a href="event.php" class="nav-link"><i class="bi bi-calendar-event"></i> Event</a>
                 <a href="jobs.php" class="nav-link"><i class="bi bi-briefcase"></i> Jobs</a>
-                <a href="polls.php" class="nav-link"><i class="bi bi-bar-chart-line"></i> Polls</a>
+                <a href="polls_view.php" class="nav-link"><i class="bi bi-bar-chart-line"></i> Polls</a>
                 <a href="volunteering.php" class="nav-link"><i class="bi bi-heart"></i> Volunteering</a>
                 <hr class="my-3 border-white opacity-25">
 
-                <a href="#" class="nav-link"><i class="bi bi-bookmark"></i> Bookmarks</a>
+                <a href="bookmarks_view.php" class="nav-link"><i class="bi bi-bookmark"></i> Bookmarks</a>
                 <a href="#" class="nav-link"><i class="bi bi-gear"></i> Settings</a>
             </nav>
         </div>
@@ -294,8 +301,8 @@ function getComments($pdo, $postId)
                         <li class="p-3 border-bottom fw-bold">Notifications</li>
                         <!-- ✅ Direct injection target -->
                         <ul id="notificationList" class="list-unstyled m-0"></ul>
-                        <li><a class="dropdown-item text-center small p-2" href="#">View all notifications</a></li>
-                    </ul>
+                        <li>
+                            <a class="dropdown-item text-center small p-2" href="notifications.php">View all notifications</a>
 
                 </div>
 
@@ -316,7 +323,6 @@ function getComments($pdo, $postId)
                         <i class="bi bi-chevron-right text-muted small"></i>
                     </a>
                 </div>
-
             </div>
         </header>
 
@@ -399,6 +405,7 @@ function getComments($pdo, $postId)
                     <?php foreach ($posts as $i => $post): ?>
                         <?php
                         $postId = $post['id'];
+                        $postType = 'community';
                         $first = trim($post['first_name'] ?? '');
                         $last = trim($post['last_name'] ?? '');
                         $postUser = ($first || $last) ? "$first $last" : 'Anonymous';
@@ -575,7 +582,7 @@ function getComments($pdo, $postId)
                                         <!-- Comment Input -->
                                         <div class="d-flex gap-2 mt-3 pt-2 border-top">
                                             <div class="avatar comment-avatar bg-secondary"><?= $currentUser['initial'] ?? '?'; ?></div>
-                                            <form method="POST" class="comment-form w-100 d-flex gap-2" data-post-id="<?= $postId; ?>">
+                                            <form method="POST" class="comment-form w-100 d-flex gap-2" data-post-id="<?= $postId; ?>" data-post-type="<?= $postType; ?>">
                                                 <input type="text" name="comment_text" class="form-control form-control-sm rounded-pill" placeholder="Write a comment..." required>
                                                 <button type="submit" class="btn btn-sm btn-success rounded-pill">
                                                     <i class="bi bi-send-fill"></i>
@@ -599,17 +606,28 @@ function getComments($pdo, $postId)
                                 <?php
                                 $category = $event['category'] ?? 'general';
                                 $title = $event['title'] ?? 'Untitled';
-                                $date = $event['date'] ?? 'TBD';
+                                $date = $event['event_date'] ?? 'TBD';
                                 $time = $event['time'] ?? '';
                                 $location = $event['location'] ?? 'Location not set';
                                 $attendees = $event['attendees'] ?? 0;
                                 ?>
                                 <li class="list-group-item event-card m-2">
-                                    <span class="badge <?= $tagClass; ?>"><?= htmlspecialchars($postTag, ENT_NOQUOTES); ?></span>
-                                    <h6 class="fw-bold mb-1"><?= sane($title); ?></h6>
-                                    <p class="mb-0 small text-muted"><i class="bi bi-clock me-1"></i> <?= sane($date); ?><?= $time ? ' | ' . sane($time) : ''; ?></p>
-                                    <p class="mb-0 small text-muted"><i class="bi bi-geo-alt me-1"></i> <?= sane($location); ?></p>
-                                    <p class="mb-0 small mt-2"><i class="bi bi-people me-1"></i> <?= $attendees; ?> attending</p>
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div class="flex-grow-1">
+                                            <span class="badge bg-info text-dark"><?= sane($title); ?></span>
+                                            <h6 class="fw-bold mb-1"><?= sane($title); ?></h6>
+                                            <p class="mb-0 small text-muted"><i class="bi bi-clock me-1"></i> <?= sane($date); ?><?= $time ? ' | ' . sane($time) : ''; ?></p>
+                                            <p class="mb-0 small text-muted"><i class="bi bi-geo-alt me-1"></i> <?= sane($location); ?></p>
+                                            <p class="mb-0 small mt-2"><i class="bi bi-people me-1"></i> <?= $attendees; ?> attending</p>
+                                        </div>
+                                        <form method="POST" class="attend-form" data-event-id="<?= $event['id'] ?>">
+                                            <input type="hidden" name="event_id" value="<?= $event['id'] ?>">
+                                            <input type="hidden" name="action" value="join">
+                                            <button type="submit" class="btn btn-sm btn-outline-success join-btn">
+                                                <i class="bi bi-person-plus"></i> Join Event
+                                            </button>
+                                        </form>
+                                    </div>
                                 </li>
                             <?php endforeach; ?>
                         <?php else: ?>
@@ -775,6 +793,7 @@ function getComments($pdo, $postId)
 
             // 🚀 Initial render
             renderPosts();
+            loadNotifications();
 
             // 🔔 Notification Badge & Read Status + Fetching
             const bellButton = document.querySelector('[data-bs-toggle="dropdown"]');
@@ -793,15 +812,22 @@ function getComments($pdo, $postId)
                         if (Array.isArray(data) && data.length > 0) {
                             data.forEach(n => {
                                 const item = document.createElement('li');
+                                item.className = 'notification-item d-flex justify-content-between align-items-start p-3 border-bottom';
+                                item.dataset.id = n.id; // ✅ This sets the notification ID
+
                                 item.innerHTML = `
-              <a class="dropdown-item notification-item unread d-flex gap-2 p-3" href="#">
-                <div class="avatar bg-${n.avatar_color} text-white fw-bold">${n.initials}</div>
-                <div>
-                  <p class="mb-1"><strong>${n.sender_name}</strong> ${n.message}</p>
-                  <small class="text-muted">${n.created_at}</small>
-                </div>
-              </a>
-            `;
+        <a class="dropdown-item unread d-flex gap-2 p-0 flex-grow-1" href="#">
+            <div class="avatar bg-${n.avatar_color} text-white fw-bold">${n.initials}</div>
+            <div>
+                <p class="mb-1"><strong>${n.sender_name}</strong> ${n.message}</p>
+                <small class="text-muted">${n.created_at}</small>
+            </div>
+        </a>
+        <button class="btn btn-sm btn-link text-danger delete-notifications" title="Remove">
+            <i class="bi bi-x-circle"></i>
+        </button>
+    `;
+
                                 notificationList.appendChild(item);
                             });
 
@@ -815,20 +841,52 @@ function getComments($pdo, $postId)
                     });
             }
 
-            // 🔔 When dropdown is clicked
-            bellButton.addEventListener('click', function() {
-                console.log('🔔 Bell clicked — loading notifications...');
-                loadNotifications();
 
-                // // Mark notifications as read
-                // fetch('mark_notifications.php', {
-                //     method: 'POST'
-                // }).then(() => {
-                //     badge.classList.add('d-none');
-                // });
+            // 🗑️ Delete Notification
+            document.addEventListener('click', e => {
+                const btn = e.target.closest('.delete-notifications');
+                if (!btn) return;
+
+                const item = btn.closest('.notification-item');
+                if (!item) return;
+                console.log('🗑️ Found item:', item);
+                console.log('🗑️ Notification ID:', item?.dataset?.id);
+
+
+                const notificationId = item.dataset.id;
+                if (!notificationId) {
+                    console.warn('🛑 Missing notification ID');
+                    return;
+                }
+
+                fetch('delete_notifications.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: `id=${encodeURIComponent(notificationId)}`
+                    })
+                    .then(res => res.json())
+                    .then(result => {
+                        if (result.success) {
+                            item.remove();
+                            updateUnreadCount(-1);
+                        } else {
+                            alert('Failed to delete notification.');
+                        }
+                    });
+                console.log('🗑️ Attempting to delete notification ID:', notificationId);
+
             });
 
-
+            function updateUnreadCount(delta) {
+                const count = document.getElementById('unreadCount');
+                const badge = document.getElementById('notificationBadge');
+                let current = parseInt(count.textContent || '0');
+                let updated = Math.max(current + delta, 0);
+                count.textContent = updated;
+                badge.classList.toggle('d-none', updated === 0);
+            }
 
             // 🧠 POST EDIT & DELETE HANDLER
             document.addEventListener('click', async e => {
@@ -949,14 +1007,25 @@ function getComments($pdo, $postId)
             });
 
 
-            // 💬 Comment submit
             document.querySelectorAll('.comment-form').forEach(form => {
                 form.addEventListener('submit', async e => {
                     e.preventDefault();
+
                     const postId = form.dataset.postId;
+                    const postType = form.dataset.postType || 'community'; // fallback
                     const input = form.querySelector('input[name="comment_text"]');
                     const text = input.value.trim();
+
                     if (!text) return;
+
+                    const button = form.querySelector('button[type="submit"]');
+                    button.disabled = true;
+
+                    const payload = new URLSearchParams({
+                        comment_post_id: postId,
+                        comment_post_type: postType,
+                        comment_text: text
+                    });
 
                     try {
                         const response = await fetch('comment.php', {
@@ -965,15 +1034,23 @@ function getComments($pdo, $postId)
                                 'Content-Type': 'application/x-www-form-urlencoded',
                                 'X-Requested-With': 'XMLHttpRequest'
                             },
-                            body: `comment_post_id=${postId}&comment_text=${encodeURIComponent(text)}`
+                            body: payload
                         });
 
                         const raw = await response.text();
-                        const result = JSON.parse(raw);
+                        let result;
+
+                        try {
+                            result = JSON.parse(raw);
+                        } catch (err) {
+                            console.error('❌ Invalid JSON:', raw);
+                            alert('Server error. Check console for details.');
+                            return;
+                        }
+
                         if (result.success && result.html) {
                             const commentList = document.querySelector(`#comments-${postId} .comment-list`);
                             commentList.insertAdjacentHTML('beforeend', result.html);
-                            console.log('Inserting comment:', result.html);
                             input.value = '';
 
                             // ✅ Update comment count
@@ -982,20 +1059,25 @@ function getComments($pdo, $postId)
                                 countSpan.textContent = parseInt(countSpan.textContent || '0') + 1;
                             }
 
-                            // 🔽 Add this block here to auto-expand the comment section
+                            // 🔽 Auto-expand comment section
                             const collapse = form.closest('.collapse');
                             if (collapse && !collapse.classList.contains('show')) {
                                 new bootstrap.Collapse(collapse, {
                                     toggle: true
                                 });
                             }
+                        } else {
+                            alert(result.error || 'Comment failed.');
                         }
-
                     } catch (error) {
                         console.error('Comment submission failed:', error);
+                        alert('Network error. Try again.');
+                    } finally {
+                        button.disabled = false;
                     }
                 });
             });
+
 
             // ✏️ Comment Edit Modal
             const editCommentModal = document.getElementById('editCommentModal');
@@ -1088,8 +1170,9 @@ function getComments($pdo, $postId)
                 });
 
                 // ✅ Handle comment edit submission
-                document.querySelector('#editCommentModal form').addEventListener('submit', async e => {
+                document.getElementById('editCommentForm').addEventListener('submit', async e => {
                     e.preventDefault();
+
                     const commentId = document.getElementById('editCommentIndex').value;
                     const text = document.getElementById('editCommentText').value.trim();
 
@@ -1114,11 +1197,16 @@ function getComments($pdo, $postId)
                                 if (editButton) {
                                     editButton.setAttribute('data-comment-text', text);
                                 }
+
+                                // ✅ Hide the modal
                                 bootstrap.Modal.getInstance(editCommentModal).hide();
                             }
+                        } else {
+                            alert(result.message || 'Edit failed.');
                         }
                     } catch (error) {
                         console.error('Comment edit failed:', error);
+                        alert('Network error.');
                     }
                 });
             }
@@ -1181,6 +1269,76 @@ function getComments($pdo, $postId)
                 });
             });
 
+            document.querySelectorAll('.attend-form').forEach(form => {
+                const button = form.querySelector('.join-btn');
+                const eventId = form.dataset.eventId;
+                const actionInput = form.querySelector('input[name="action"]');
+
+                // Initial state check
+                fetch(`get_attendees.php?event_id=${eventId}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        const attendees = data.attendees || [];
+                        const isAttending = data.attending ?? attendees.some(a => a.is_current_user);
+
+                        updateButtonState(button, isAttending);
+                        actionInput.value = isAttending ? 'leave' : 'join';
+                    });
+
+                // Handle submit without refresh
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    const action = actionInput.value;
+
+                    fetch('event_attend_action.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-Requested-With': 'XMLHttpRequest' // 👈 this tells PHP it's AJAX
+                            },
+                            body: `event_id=${eventId}&action=${action}`
+                        })
+
+                        .then(res => res.json())
+                        .then(result => {
+                            if (result.success) {
+                                // Re-fetch attendee data to update button and count
+                                fetch(`get_attendees.php?event_id=${eventId}`)
+                                    .then(res => res.json())
+                                    .then(data => {
+                                        const attendees = data.attendees || [];
+                                        const isAttending = data.attending ?? attendees.some(a => a.is_current_user);
+
+                                        updateButtonState(button, isAttending);
+                                        actionInput.value = isAttending ? 'leave' : 'join';
+
+                                        // Update attendee count
+                                        const countText = form.closest('.event-card').querySelector('.bi-people').parentElement;
+                                        countText.innerHTML = `<i class="bi bi-people me-1"></i> ${attendees.length} attending`;
+                                    });
+                            } else {
+                                alert(result.error || 'Failed to update attendance.');
+                            }
+                        })
+                        .catch(err => {
+                            console.error(`❌ Failed to submit attendance for event ${eventId}:`, err);
+                        });
+                });
+            });
+
+            function updateButtonState(button, isAttending) {
+                if (!button) return;
+
+                if (isAttending) {
+                    button.classList.remove('btn-outline-success');
+                    button.classList.add('btn-outline-danger');
+                    button.innerHTML = '<i class="bi bi-person-dash"></i> Leave Event';
+                } else {
+                    button.classList.remove('btn-outline-danger');
+                    button.classList.add('btn-outline-success');
+                    button.innerHTML = '<i class="bi bi-person-plus"></i> Join Event';
+                }
+            }
 
             // 🔐 Logout Confirmation
             window.confirmLogout = function() {

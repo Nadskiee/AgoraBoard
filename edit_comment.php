@@ -15,4 +15,6 @@ if (!$userId || !$commentId || $text === '') {
 $stmt = $pdo->prepare("UPDATE comments SET content = ?, updated_at = NOW() WHERE id = ? AND user_id = ?");
 $stmt->execute([$text, $commentId, $userId]);
 
-echo json_encode(['success' => true]);
+echo json_encode(['success' => true, 'message' => 'Comment updated']);
+exit;
+

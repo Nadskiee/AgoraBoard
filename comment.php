@@ -16,6 +16,7 @@ if (strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== 'xmlhttprequest') {
 $userId = $_SESSION['currentUser']['id'] ?? null;
 $postId = (int)($_POST['comment_post_id'] ?? 0);
 $text = trim($_POST['comment_text'] ?? '');
+$postType = $_POST['comment_post_type'] ?? 'community';
 
 if (!$userId || !$postId || $text === '') {
   http_response_code(400);
@@ -25,8 +26,9 @@ if (!$userId || !$postId || $text === '') {
 
 try {
   // ✅ Insert comment
-  $stmt = $pdo->prepare("INSERT INTO comments (post_type, post_id, user_id, content) VALUES ('community', ?, ?, ?)");
-  $stmt->execute([$postId, $userId, $text]);
+  $stmt = $pdo->prepare("INSERT INTO comments (post_type, post_id, user_id, content) VALUES (?, ?, ?, ?)");
+  $stmt->execute([$postType, $postId, $userId, $text]);
+
 
   if ($stmt->rowCount() === 0) {
     echo json_encode(['success' => false, 'error' => 'Insert failed']);
@@ -42,7 +44,8 @@ try {
 
   // ✅ Safe notification block
   try {
-    $stmt = $pdo->prepare("SELECT created_by AS user_id, title FROM community_posts WHERE id = ?");
+    $postTable = $postType . '_posts';
+    $stmt = $pdo->prepare("SELECT created_by AS user_id, title FROM {$postTable} WHERE id = ?");
     $stmt->execute([$postId]);
     $post = $stmt->fetch(PDO::FETCH_ASSOC);
 
