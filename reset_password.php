@@ -29,7 +29,7 @@ function generateResetToken($pdo, $email)
         $mail->Host = 'smtp-relay.brevo.com';
         $mail->SMTPAuth = true;
         $mail->Username = '99c912001@smtp-brevo.com';
-        $mail->Password = 'xsmtpsib-66e3870aa0f3c7eb341e78f1cfcc494ad68302a28b01e74700d86ea6187099e5-S3DcAb4zoypR8uHX';
+        $mail->Password = ''; // replace with your actual password
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port = 587;
 
