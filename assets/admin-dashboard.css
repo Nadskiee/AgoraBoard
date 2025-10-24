@@ -1,0 +1,235 @@
+:root {
+  --teal: #0d9488;
+  --teal-accent: #14b8a6;
+  --blue: #2563eb;
+  --cyan: #0284c7;
+  --bg: #f9fafb;
+  --white: #ffffff;
+  --border: #e5e7eb;
+  --muted-text: #64748b;
+  --dark-text: #1e293b;
+  --sidebar-width: 250px;
+}
+
+/* Base */
+body {
+  background-color: var(--bg);
+  color: var(--dark-text);
+  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ========== SIDEBAR ========== */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  background: var(--teal);
+  color: var(--white);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.08);
+}
+
+.sidebar h5 {
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+.sidebar small {
+  display: block;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #ccfbf1;
+  margin-bottom: 20px;
+}
+
+.sidebar .nav-link {
+  color: #d1fae5;
+  font-weight: 500;
+  padding: 12px 18px;
+  border-radius: 8px;
+  margin: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.2s ease;
+}
+
+.sidebar .nav-link i {
+  font-size: 1.1rem;
+  opacity: 0.9;
+}
+
+.sidebar .nav-link:hover,
+.sidebar .nav-link.active {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.sidebar hr {
+  margin: 15px 0;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 10px 20px;
+}
+
+.sidebar-footer .logout-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  width: 100%;
+  color: #fff;
+  font-weight: 500;
+  border-radius: 8px;
+  padding: 10px;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.sidebar-footer .logout-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ========== MAIN CONTENT ========== */
+.main-content {
+  margin-left: var(--sidebar-width);
+  padding: 30px 40px;
+}
+
+/* Header */
+.dashboard-header h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+/* ========== STAT CARDS ========== */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.stat-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-left: 6px solid var(--teal);
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.04);
+  transition: transform 0.1s ease-in-out;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+}
+
+.stat-title {
+  font-size: 0.9rem;
+  color: var(--muted-text);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-top: 5px;
+}
+
+/* ========== TABLE ========== */
+.table-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.03);
+}
+
+.table-card .card-header {
+  background-color: var(--cyan);
+  color: var(--white);
+  font-weight: 600;
+  padding: 15px 20px;
+}
+
+.table thead {
+  background-color: #f1f5f9;
+  font-size: 0.9rem;
+}
+
+.table th {
+  font-weight: 600;
+  color: var(--dark-text);
+}
+
+.table td {
+  vertical-align: middle;
+}
+
+/* 🌿 Green Table Theme */
+.table-green thead {
+  background-color: var(--teal);
+  color: white;
+}
+
+.table-green th {
+  font-weight: 600;
+  text-transform: uppercase;
+  border-color: #d1e7dd;
+}
+
+.table-green tbody tr {
+  transition: background-color 0.2s ease;
+}
+
+.table-green tbody tr:hover {
+  background-color: #e9f7ef;
+}
+
+.table-green td {
+  border-color: #d1e7dd;
+  vertical-align: middle;
+}
+
+/* Table container card */
+.table-card.table-green {
+  border-left: 4px solid var(--teal);
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 6px rgba(0, 128, 96, 0.15);
+}
+
+.table-card.table-green .card-header {
+  background-color: var(--teal-accent);
+  color: white;
+  border-top-left-radius: 0.5rem;
+  border-top-right-radius: 0.5rem;
+}
+
+
+/* Buttons */
+.btn-outline-primary {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.btn-outline-primary:hover {
+  background: var(--cyan);
+  color: #fff;
+}
+
+/* Footer */
+.footer {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--muted-text);
+  margin-top: 40px;
+}
+
