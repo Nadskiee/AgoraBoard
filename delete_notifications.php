@@ -13,13 +13,15 @@ if (!$userId || !$notifId) {
     exit;
 }
 
-$stmt = $pdo->prepare("DELETE FROM notifications WHERE id = ? AND user_id = ?");
-$success = $stmt->execute([$notifId, $userId]);
+$now = date('Y-m-d H:i:s');
 
-if ($success) {
+$stmt = $pdo->prepare("UPDATE notifications SET deleted_at = ? WHERE id = ? AND user_id = ?");
+$success = $stmt->execute([$now, $notifId, $userId]);
+
+if ($success && $stmt->rowCount() > 0) {
     echo json_encode(['success' => true]);
 } else {
-    error_log("Delete failed: PDO execution error");
-    echo json_encode(['success' => false, 'error' => 'Database error']);
+    error_log("Soft delete failed: Notification not found or unauthorized");
+    echo json_encode(['success' => false, 'error' => 'Notification not found or unauthorized']);
 }
 exit;

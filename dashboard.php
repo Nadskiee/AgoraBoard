@@ -27,59 +27,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_post_content'])) 
     exit;
 }
 
-// ✏️ Edit post (AJAX only)
+// ✏️ Edit post (AJAX)
 if (
     $_SERVER['REQUEST_METHOD'] === 'POST' &&
     isset($_POST['edit_post_index'], $_POST['edit_post_content']) &&
     strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest'
 ) {
+
     header('Content-Type: application/json');
     $postId = (int)$_POST['edit_post_index'];
     $newContent = trim($_POST['edit_post_content']);
 
-    try {
-        $stmt = $pdo->prepare("UPDATE community_posts SET content=? WHERE id=? AND created_by=?");
-        $stmt->execute([$newContent, $postId, $userId]);
+    $stmt = $pdo->prepare("UPDATE community_posts SET content=? WHERE id=? AND created_by=? AND deleted_at IS NULL");
+    $stmt->execute([$newContent, $postId, $userId]);
 
-        if ($stmt->rowCount() > 0) {
-            echo json_encode(['success' => true, 'message' => 'Post updated']);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Unauthorized or no changes']);
-        }
-    } catch (Exception $e) {
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-    }
-
-    exit; // prevent page HTML from leaking into AJAX response
+    echo json_encode([
+        'success' => $stmt->rowCount() > 0,
+        'message' => $stmt->rowCount() > 0 ? 'Post updated' : 'Unauthorized or no changes'
+    ]);
+    exit;
 }
 
 
-// 🗑️ Delete post
+// 🗑️ Soft delete post
 if (isset($_POST['delete_post_id'])) {
-    $postId = $_POST['delete_post_id'];
-
-    // only allow the user who made the post to delete it
-    $stmt = $pdo->prepare("DELETE FROM community_posts WHERE id = ? AND created_by = ?");
-    $stmt->execute([$postId, $userId]);
+    $postId = (int)$_POST['delete_post_id'];
+    $now = date('Y-m-d H:i:s');
+    $stmt = $pdo->prepare("UPDATE community_posts SET deleted_at=? WHERE id=? AND created_by=?");
+    $stmt->execute([$now, $postId, $userId]);
 }
 
 
-// ❤️ Like post (AJAX only)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['like_post_id']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest') {
+// ❤️ Like/unlike post (AJAX)
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    isset($_POST['like_post_id']) &&
+    strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest'
+) {
+
     $postId = (int)$_POST['like_post_id'];
 
-    $check = $pdo->prepare("SELECT id FROM likes WHERE user_id=? AND post_type='community' AND post_id=?");
+    $check = $pdo->prepare("SELECT id FROM likes WHERE user_id=? AND post_type='community' AND post_id=? AND deleted_at IS NULL");
     $check->execute([$userId, $postId]);
 
+    $now = date('Y-m-d H:i:s');
+
     if ($check->rowCount() > 0) {
-        $pdo->prepare("DELETE FROM likes WHERE user_id=? AND post_type='community' AND post_id=?")->execute([$userId, $postId]);
+        $pdo->prepare("UPDATE likes SET deleted_at=? WHERE user_id=? AND post_type='community' AND post_id=?")->execute([$now, $userId, $postId]);
         $liked = false;
     } else {
         $pdo->prepare("INSERT INTO likes (user_id, post_type, post_id) VALUES (?, 'community', ?)")->execute([$userId, $postId]);
         $liked = true;
     }
 
-    $count = $pdo->prepare("SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=?");
+    $count = $pdo->prepare("SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=? AND deleted_at IS NULL");
     $count->execute([$postId]);
     $totalLikes = $count->fetchColumn();
 
@@ -91,15 +92,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['like_post_id']) && st
     exit;
 }
 
-// 🗑️ Delete comment (AJAX only)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_comment_id']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest') {
+// 🗑️ Soft delete comment (AJAX)
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    isset($_POST['delete_comment_id']) &&
+    strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest'
+) {
+
     $commentId = (int)$_POST['delete_comment_id'];
-    $pdo->prepare("DELETE FROM comments WHERE id=? AND user_id=?")->execute([$commentId, $userId]);
+    $now = date('Y-m-d H:i:s');
+    $pdo->prepare("UPDATE comments SET deleted_at=? WHERE id=? AND user_id=?")->execute([$now, $commentId, $userId]);
     echo json_encode(['success' => true]);
     exit;
 }
 
-// ✏️ Edit comment (AJAX only)
+// ✏️ Edit comment (AJAX)
 if (
     $_SERVER['REQUEST_METHOD'] === 'POST' &&
     isset($_POST['comment_id'], $_POST['comment_text']) &&
@@ -109,22 +116,22 @@ if (
     $commentId = (int)$_POST['comment_id'];
     $text = sane($_POST['comment_text']);
 
-    $stmt = $pdo->prepare("UPDATE comments SET content=? WHERE id=? AND user_id=?");
+    $stmt = $pdo->prepare("UPDATE comments SET content=? WHERE id=? AND user_id=? AND deleted_at IS NULL");
     $stmt->execute([$text, $commentId, $userId]);
 
     echo json_encode(['success' => true]);
     exit;
 }
 
-// 📅 Fetch unpinned post
+// 📅 Fetch unpinned posts
 $stmtUnpinned = $pdo->query("
     SELECT p.*, u.first_name, u.last_name, u.role,
-        (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id) AS total_likes,
-        (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id) AS total_comments,
-        (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id) AS total_bookmarks
+        (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_likes,
+        (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_comments,
+        (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_bookmarks
     FROM community_posts p
     LEFT JOIN users u ON p.created_by = u.id
-    WHERE p.is_pinned = 0
+    WHERE p.is_pinned = 0 AND p.deleted_at IS NULL
     ORDER BY p.created_at DESC
 ");
 $posts = $stmtUnpinned->fetchAll(PDO::FETCH_ASSOC);
@@ -132,16 +139,15 @@ $posts = $stmtUnpinned->fetchAll(PDO::FETCH_ASSOC);
 // 📅 Fetch pinned posts
 $stmtPinned = $pdo->query("
     SELECT p.*, u.first_name, u.last_name, u.role,
-        (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id) AS total_likes,
-        (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id) AS total_comments,
-        (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id) AS total_bookmarks
+        (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_likes,
+        (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_comments,
+        (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_bookmarks
     FROM community_posts p
     LEFT JOIN users u ON p.created_by = u.id
-    WHERE p.is_pinned = 1
+    WHERE p.is_pinned = 1 AND p.deleted_at IS NULL
     ORDER BY p.created_at DESC
 ");
 $pinnedPosts = $stmtPinned->fetchAll(PDO::FETCH_ASSOC);
-
 
 // 💬 Fetch comments per post
 function getComments($pdo, $postId)
@@ -150,15 +156,15 @@ function getComments($pdo, $postId)
         SELECT c.*, u.first_name, u.last_name 
         FROM comments c 
         LEFT JOIN users u ON c.user_id = u.id 
-        WHERE c.post_type='community' AND c.post_id=? 
+        WHERE c.post_type='community' AND c.post_id=? AND c.deleted_at IS NULL
         ORDER BY c.created_at ASC
     ");
     $q->execute([$postId]);
     return $q->fetchAll(PDO::FETCH_ASSOC);
 }
 
+// 📅 Upcoming events
 $today = date('Y-m-d');
-
 $stmt = $pdo->prepare("
     SELECT 
         e.id,
@@ -167,15 +173,14 @@ $stmt = $pdo->prepare("
         e.location,
         COUNT(a.user_id) AS attendees
     FROM events e
-    LEFT JOIN event_attendees a ON e.id = a.event_id
-    WHERE e.event_date >= ?
+    LEFT JOIN event_attendees a ON e.id = a.event_id AND a.deleted_at IS NULL
+    WHERE e.event_date >= ? AND e.deleted_at IS NULL
     GROUP BY e.id
     ORDER BY e.event_date ASC
     LIMIT 5
 ");
 $stmt->execute([$today]);
 $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
 ?>
 
 <!doctype html>
@@ -237,28 +242,28 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
+    <!-- 🧭 Sidebar -->
     <div class="sidebar">
-        <div>
+        <div class="sidebar-content">
             <h4 class="mb-4"><i class="bi bi-people-fill me-2"></i> AgoraBoard</h4>
             <nav class="nav flex-column">
-                <a href="dashboard.php" class="nav-link active"><i class="bi bi-house-door"></i> Dashboard</a>
+                <a href="dashboard.php" class="nav-link"><i class="bi bi-house-door"></i> Dashboard</a>
                 <a href="public-safety.php" class="nav-link"><i class="bi bi-shield-exclamation"></i> Public Safety</a>
-                <a href="lost-and-found.php" class="nav-link"><i class="bi bi-search"></i> Lost and Found</a>
-                <a href="event.php" class="nav-link"><i class="bi bi-calendar-event"></i> Event</a>
+                <a href="lost-and-found.php" class="nav-link"><i class="bi bi-search"></i> Lost & Found</a>
+                <a href="event.php" class="nav-link active"><i class="bi bi-calendar-event"></i> Events</a>
                 <a href="jobs.php" class="nav-link"><i class="bi bi-briefcase"></i> Jobs</a>
                 <a href="polls_view.php" class="nav-link"><i class="bi bi-bar-chart-line"></i> Polls</a>
                 <a href="volunteering.php" class="nav-link"><i class="bi bi-heart"></i> Volunteering</a>
                 <hr class="my-3 border-white opacity-25">
-
                 <a href="bookmarks_view.php" class="nav-link"><i class="bi bi-bookmark"></i> Bookmarks</a>
                 <a href="#" class="nav-link"><i class="bi bi-gear"></i> Settings</a>
             </nav>
         </div>
 
         <div class="sidebar-footer">
-            <form action="logout.php" method="POST" class="m-0" id="logoutForm">
+            <form action="logout.php" method="POST" id="logoutForm">
                 <input type="hidden" name="logout" value="1">
-                <button type="button" class="nav-link logout-btn w-100" onclick="confirmLogout()">
+                <button type="button" class="nav-link logout-btn w-100 text-start" onclick="confirmLogout()">
                     <i class="bi bi-box-arrow-right"></i> Logout
                 </button>
             </form>

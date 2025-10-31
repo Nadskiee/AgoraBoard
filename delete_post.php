@@ -11,10 +11,17 @@ if (!isset($_SESSION['currentUser']['id'])) {
 $userId = $_SESSION['currentUser']['id'];
 $postId = (int)($_POST['post_id'] ?? 0);
 
+if (!$postId) {
+    echo json_encode(['success' => false, 'message' => 'Invalid post ID']);
+    exit;
+}
+
 try {
     $pdo->beginTransaction();
 
-    // 🗑️ Delete all related data tied to this community post
+    $now = date('Y-m-d H:i:s');
+
+    // 🗑️ Soft delete related data
     $tables = [
         ['comments', 'post_type', 'post_id'],
         ['likes', 'post_type', 'post_id'],
@@ -23,14 +30,13 @@ try {
     ];
 
     foreach ($tables as [$table, $typeCol, $idCol]) {
-        $stmt = $pdo->prepare("DELETE FROM {$table} WHERE {$typeCol} = 'community' AND {$idCol} = ?");
-        $stmt->execute([$postId]);
+        $stmt = $pdo->prepare("UPDATE {$table} SET deleted_at = ? WHERE {$typeCol} = 'community' AND {$idCol} = ?");
+        $stmt->execute([$now, $postId]);
     }
 
-
-    // 🗑️ Delete the post itself
-    $stmtPost = $pdo->prepare("DELETE FROM community_posts WHERE id = ? AND created_by = ?");
-    $stmtPost->execute([$postId, $userId]);
+    // 🗑️ Soft delete the post itself
+    $stmtPost = $pdo->prepare("UPDATE community_posts SET deleted_at = ? WHERE id = ? AND created_by = ?");
+    $stmtPost->execute([$now, $postId, $userId]);
 
     if ($stmtPost->rowCount() > 0) {
         $pdo->commit();
@@ -43,22 +49,3 @@ try {
     $pdo->rollBack();
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 }
-
-
-// if (!$postId) {
-//     echo json_encode(['success' => false, 'message' => 'Invalid post ID']);
-//     exit;
-// }
-
-// try {
-//     $stmt = $pdo->prepare("DELETE FROM community_posts WHERE id=? AND created_by=?");
-//     $stmt->execute([$postId, $userId]);
-
-//     if ($stmt->rowCount() > 0) {
-//         echo json_encode(['success' => true]);
-//     } else {
-//         echo json_encode(['success' => false, 'message' => 'Unauthorized or not found']);
-//     }
-// } catch (Exception $e) {
-//     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-// }

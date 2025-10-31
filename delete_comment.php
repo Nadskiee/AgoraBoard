@@ -8,11 +8,17 @@ $commentId = (int)($_POST['comment_id'] ?? 0);
 $postType = $_POST['comment_post_type'] ?? 'community';
 
 if (!$userId || !$commentId) {
-  echo json_encode(['success' => false]);
+  echo json_encode(['success' => false, 'message' => 'Missing user or comment ID']);
   exit;
 }
 
-$stmt = $pdo->prepare("DELETE FROM comments WHERE id=? AND user_id=? AND post_type=?");
-$stmt->execute([$commentId, $userId, $postType]);
+$now = date('Y-m-d H:i:s');
 
-echo json_encode(['success' => true]);
+$stmt = $pdo->prepare("UPDATE comments SET deleted_at = ? WHERE id = ? AND user_id = ? AND post_type = ?");
+$stmt->execute([$now, $commentId, $userId, $postType]);
+
+if ($stmt->rowCount() > 0) {
+  echo json_encode(['success' => true]);
+} else {
+  echo json_encode(['success' => false, 'message' => 'Comment not found or unauthorized']);
+}

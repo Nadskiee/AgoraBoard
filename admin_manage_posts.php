@@ -1,10 +1,30 @@
+<?php
+session_start();
+require_once 'db_connect.php'; // ✅ PDO connection
+
+// 🔐 Check if admin is logged in
+if (
+    !isset($_SESSION['currentUser']) ||
+    $_SESSION['currentUser']['role'] !== 'admin'
+) {
+    header("Location: login.php");
+    exit;
+}
+
+
+
+// Logged-in admin info
+$adminName = $_SESSION['currentUser']['name'] ?? 'Administrator';
+
+
+?>
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <title>Admin Dashboard</title>
-    <link rel="stylesheet" href="assets/admin-dashboard.css?v=<?php echo time(); ?>">
+    <link rel="stylesheet" href="assets/admin_dashboard.css?v=<?php echo time(); ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 </head>
@@ -12,14 +32,12 @@
 <body>
     <div class="container-fluid">
         <div class="row">
-            <!-- ✅ Sidebar (only once) -->
             <?php include 'admin_sidebar.php'; ?>
 
-            <!-- ✅ Main content -->
-            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-3">
+            <!-- Main Content -->
+            <main class="main-content col-md-9 ms-sm-auto col-lg-10 px-md-4">
                 <div class="dashboard-header border-bottom mb-4 pb-2">
-                    <h1 class="h3 mb-1">Manage Posts</h1>
-                    <p class="text-muted">View, edit, and delete community posts.</p>
+                    <h1 class="h3">Manage Posts</h1>
                 </div>
 
                 <!-- Posts Table -->

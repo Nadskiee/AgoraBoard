@@ -94,7 +94,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         setcookie('remembered_email', '', time() - 3600, "/"); // Clear cookie
                     }
 
-                    $redirect = ($user['role'] === 'admin') ? "admin-dashboard.php" : "dashboard.php";
+                    $redirect = ($user['role'] === 'admin') ? "admin_dashboard.php" : "dashboard.php";
                     header("Location: $redirect");
                     exit;
                 } else {
