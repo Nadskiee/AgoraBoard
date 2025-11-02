@@ -4,30 +4,35 @@ include 'navbar.php';
 
 // Search & filter inputs
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
-$category = isset($_GET['category']) ? trim($_GET['category']) : '';
+$category_id = isset($_GET['category']) ? intval($_GET['category']) : 0;
 
-// Base query
-$query = "SELECT title, content, category, is_pinned 
-          FROM community_posts 
+// Fetch categories for dropdown
+$categoryQuery = $pdo->query("SELECT id, name FROM categories ORDER BY name ASC");
+$categories = $categoryQuery->fetchAll(PDO::FETCH_ASSOC);
+
+// Base query - FIXED
+$query = "SELECT p.title, p.content, c.name AS category_name, p.is_pinned 
+          FROM community_posts p
+          LEFT JOIN categories c ON p.category_id = c.id
           WHERE 1";
 $params = [];
 
-// Add search
+// Add search - FIXED (aliased table)
 if (!empty($search)) {
-    $query .= " AND (title LIKE ? OR content LIKE ?)";
+    $query .= " AND (p.title LIKE ? OR p.content LIKE ?)";
     $searchTerm = "%$search%";
     $params[] = $searchTerm;
     $params[] = $searchTerm;
 }
 
-// Add category filter
-if (!empty($category)) {
-    $query .= " AND category = ?";
-    $params[] = $category;
+// Category filter by ID
+if ($category_id > 0) {
+    $query .= " AND p.category_id = ?";
+    $params[] = $category_id;
 }
 
-// Order pinned first
-$query .= " ORDER BY is_pinned DESC, created_at DESC LIMIT 10";
+// Order pinned first - FIXED (aliased table)
+$query .= " ORDER BY p.is_pinned DESC, p.created_at DESC LIMIT 10";
 
 $stmt = $pdo->prepare($query);
 $stmt->execute($params);
@@ -64,8 +69,6 @@ foreach ($recentPolls as $row) {
     ];
 }
 ?>
-
-
 
 <!DOCTYPE html>
 <html lang="en">
@@ -213,7 +216,6 @@ foreach ($recentPolls as $row) {
 <body>
 
 
-    <!-- Hero Section -->
     <section class="hero-bg py-5">
         <div class="container text-center position-relative" style="z-index: 10;">
             <h2 class="display-1 fw-bold mb-4 lh-1">
@@ -227,7 +229,6 @@ foreach ($recentPolls as $row) {
         </div>
     </section>
 
-    <!-- Search & Filter Form -->
     <section class="py-3">
         <div class="container">
             <form method="GET" class="row g-2">
@@ -237,11 +238,11 @@ foreach ($recentPolls as $row) {
                 <div class="col-md-4">
                     <select name="category" class="form-select">
                         <option value="">All Categories</option>
-                        <option value="General" <?= ($category == 'General') ? 'selected' : '' ?>>General</option>
-                        <option value="Events" <?= ($category == 'Events') ? 'selected' : '' ?>>Events</option>
-                        <option value="Safety" <?= ($category == 'Safety') ? 'selected' : '' ?>>Safety</option>
-                        <option value="Lost & Found" <?= ($category == 'Lost & Found') ? 'selected' : '' ?>>Lost & Found</option>
-                        <option value="Volunteering" <?= ($category == 'Volunteering') ? 'selected' : '' ?>>Volunteering</option>
+                        <?php foreach ($categories as $cat): ?>
+                            <option value="<?= $cat['id']; ?>" <?= ($category_id == $cat['id']) ? 'selected' : ''; ?>>
+                                <?= htmlspecialchars($cat['name']); ?>
+                            </option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -251,7 +252,6 @@ foreach ($recentPolls as $row) {
         </div>
     </section>
 
-    <!-- Latest Community Posts -->
     <section class="py-5">
         <div class="container">
             <h3 class="fw-bold mb-4 gradient-text">Recent Community Posts</h3>
@@ -264,7 +264,8 @@ foreach ($recentPolls as $row) {
                                     <?php
                                     $title = trim($post['title'] ?? '');
                                     $isPinned = !empty($post['is_pinned']);
-                                    $category = $post['category'] ?? 'General';
+                                    // FIXED: Use 'category_name' from the SQL query
+                                    $category = $post['category_name'] ?? 'General';
                                     ?>
 
                                     <?php if ($title): ?>
@@ -298,7 +299,6 @@ foreach ($recentPolls as $row) {
 
 
 
-    <!-- Latest Events -->
     <section class="py-5 bg-light">
         <div class="container">
             <h3 class="fw-bold mb-4 gradient-text">Latest Community Events</h3>
@@ -328,7 +328,6 @@ foreach ($recentPolls as $row) {
     </section>
 
 
-    <!-- Latest Polls -->
     <section class="py-5">
         <div class="container">
             <h3 class="fw-bold mb-4 gradient-text">Community Polls</h3>
@@ -359,11 +358,6 @@ foreach ($recentPolls as $row) {
         </div>
     </section>
 
-
-
-
-
-    <!-- Footer -->
     <footer class="border-top py-5" style="background: linear-gradient(to bottom, rgba(249,250,251,0.3), rgba(249,250,251,0.5));">
         <div class="container">
             <div class="row g-4">

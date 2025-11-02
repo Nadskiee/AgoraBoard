@@ -1,7 +1,21 @@
+<?php
+// Default to dashboard if $active_page is not set
+if (!isset($active_page)) {
+    $active_page = 'dashboard';
+}
+
+// Ensure $adminName is set, providing a default if not
+$adminName = $_SESSION['currentUser']['name'] ?? "Admin";
+?>
+
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
 <style>
+    :root {
+        --teal: #0d9488;
+    }
+
     .sidebar {
         background-color: var(--teal);
         color: white;
@@ -13,6 +27,7 @@
         display: flex;
         flex-direction: column;
         justify-content: space-between;
+        z-index: 100;
     }
 
     .sidebar .nav-link {
@@ -21,12 +36,19 @@
         border-radius: 4px;
         margin: 2px 10px;
         font-size: 0.9rem;
+        display: flex;
+        align-items: center;
     }
 
     .sidebar .nav-link:hover,
     .sidebar .nav-link.active {
-        background-color: #0a615aff;
+        background-color: #0a615a;
         color: #fff;
+    }
+
+    .sidebar .nav-link i {
+        width: 20px;
+        text-align: center;
     }
 
     .sidebar hr {
@@ -57,6 +79,34 @@
         margin-left: 220px;
         padding: 20px;
     }
+
+    /* Responsive fix */
+    @media (max-width: 768px) {
+        .sidebar {
+            position: relative;
+            width: 100%;
+            min-height: auto;
+            flex-direction: row;
+            flex-wrap: wrap;
+            padding: 10px;
+        }
+
+        .sidebar ul {
+            flex-direction: row;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .sidebar .nav-link {
+            margin: 5px;
+            font-size: 0.85rem;
+        }
+
+        .main-content {
+            margin-left: 0;
+            padding: 15px;
+        }
+    }
 </style>
 
 <!-- Sidebar -->
@@ -79,26 +129,32 @@
                 </a>
             </li>
             <li>
-                <a href="categories.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'categories.php' ? 'active' : ''; ?>">
+                <a href="admin_manage_categories.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'admin_manage_categories.php' ? 'active' : ''; ?>">
                     <i class="fas fa-folder-open me-2"></i> Categories
                 </a>
             </li>
             <li>
-                <a href="users.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'users.php' ? 'active' : ''; ?>">
+                <a href="admin_manage_users.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'admin_manage_users.php' ? 'active' : ''; ?>">
+
                     <i class="fas fa-users me-2"></i> Users
                 </a>
             </li>
             <li>
-                <a href="reports.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'reports.php' ? 'active' : ''; ?>">
+                <a href="admin_manage_reports.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'reports.php' ? 'active' : ''; ?>">
                     <i class="fas fa-flag me-2"></i> Reports
                 </a>
             </li>
             <li>
-                <a href="comments.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'comments.php' ? 'active' : ''; ?>">
+                <a href="admin_manage_comments.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'comments.php' ? 'active' : ''; ?>">
                     <i class="fas fa-comments me-2"></i> Comments
                 </a>
             </li>
             <li>
+                <a href="admin_support.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'admin_support.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-envelope me-2"></i> Support
+                </a>
+            </li>
+            <!-- <li>
                 <a href="events.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'events.php' ? 'active' : ''; ?>">
                     <i class="fas fa-calendar-alt me-2"></i> Events
                 </a>
@@ -107,7 +163,7 @@
                 <a href="settings.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'settings.php' ? 'active' : ''; ?>">
                     <i class="fas fa-cog me-2"></i> Settings
                 </a>
-            </li>
+            </li> -->
         </ul>
     </div>
 

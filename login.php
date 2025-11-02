@@ -6,6 +6,24 @@ $message = "";
 $remembered_email = $_COOKIE['remembered_email'] ?? '';
 $remember_checked = $remembered_email ? 'checked' : '';
 
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['support'])) {
+    $support_email = trim($_POST['user_email'] ?? '');
+    $support_name  = trim($_POST['user_name'] ?? '');
+    $support_message = trim($_POST['message'] ?? '');
+
+    if ($support_message) {
+        $stmt = $pdo->prepare("INSERT INTO support_requests (user_email, user_name, message, created_at) VALUES (?, ?, ?, NOW())");
+        $stmt->execute([$support_email, $support_name, $support_message]);
+
+        // Redirect to avoid resubmission
+        header("Location: login.php?support_sent=1");
+        exit;
+    } else {
+        $message = "<div class='alert alert-danger text-center'>⚠️ Please fill out the support message.</div>";
+    }
+}
+
+
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     // 🟢 FORGOT PASSWORD FLOW
     if (isset($_POST['forgot'])) {
@@ -14,11 +32,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         if ($forgotEmail === '') {
             $message = "<div class='alert alert-warning'>⚠️ Please enter your email.</div>";
         } else {
-            $stmt = $pdo->prepare("SELECT id, email FROM users WHERE email = ?");
+            $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
             $stmt->execute([$forgotEmail]);
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if ($user) {
+                // Generate token and expiration
                 $token = bin2hex(random_bytes(16));
                 $expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
                 $stmt = $pdo->prepare("UPDATE users SET reset_token = ?, reset_expires = ? WHERE id = ?");
@@ -26,57 +45,92 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                 $resetLink = "http://localhost/AgoraBoard/reset_password.php?token=$token";
 
-                // ✅ Use PHPMailer instead of mail()
+                // Try sending email
                 require 'vendor/autoload.php';
                 $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+                $emailSent = false;
 
                 try {
                     $mail->isSMTP();
                     $mail->Host = 'smtp.gmail.com';
                     $mail->SMTPAuth = true;
-                    $mail->Username = 'cabparlove@gmail.com'; // ⚠️ Replace with your Gmail
-                    $mail->Password = 'tiag jdln ukhd yrzi';  // ⚠️ Use App Password (not your Gmail password)
+                    $mail->Username = 'cabparlove@gmail.com'; // Your Gmail
+                    $mail->Password = 'tiag jdln ukhd yrzi';  // App password
                     $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port = 587;
 
-                    $mail->setFrom('yourgmail@gmail.com', 'AgoraBoard');
-                    $mail->addAddress($user['email']);
+                    $mail->setFrom('cabparlove@gmail.com', 'AgoraBoard');
+                    $mail->addAddress($forgotEmail);
 
                     $mail->isHTML(true);
                     $mail->Subject = 'Password Reset - AgoraBoard';
                     $mail->Body = "
-                    <p>Hello,</p>
-                    <p>We received a password reset request for your AgoraBoard account.</p>
-                    <p><a href='$resetLink'>$resetLink</a></p>
-                    <p>This link will expire in 1 hour.</p>
-                ";
+                        <p>Hello,</p>
+                        <p>We received a password reset request for your AgoraBoard account.</p>
+                        <p><a href='$resetLink'>Click here to reset your password</a></p>
+                        <p>This link will expire in 1 hour.</p>
+                    ";
 
                     $mail->send();
-                    $message = "<div class='alert alert-success'>📧 Reset link sent to your email!</div>";
+                    $emailSent = true;
                 } catch (Exception $e) {
-                    $message = "<div class='alert alert-warning'>⚠️ Email could not be sent. Mailer Error: {$mail->ErrorInfo}</div>";
+                    $emailSent = false;
+                }
+
+                if ($emailSent) {
+                    // Email sent successfully
+                    $message = "<div class='alert alert-success'>📧 Reset link sent to your email!</div>";
+                } else {
+                    // PHPMailer failed → create temporary password
+                    $tempPassword = bin2hex(random_bytes(4)); // 8-character temporary password
+                    $hashedTempPassword = password_hash($tempPassword, PASSWORD_DEFAULT);
+
+                    // Save hashed temporary password to database
+                    $stmt = $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
+                    $stmt->execute([$hashedTempPassword, $user['id']]);
+
+                    $message = "
+                        <div class='alert alert-warning'>
+                            ⚠️ Email could not be sent. A temporary password has been generated:
+                            <br><strong>Temporary Password:</strong> $tempPassword
+                            <br>Please log in using this password and change it immediately.
+                        </div>
+                    ";
                 }
             } else {
                 $message = "<div class='alert alert-danger'>❌ No account found with that email.</div>";
             }
         }
     }
+}
 
-    // Handle login form
-    if (isset($_POST['login'])) {
-        $email = trim($_POST['email'] ?? '');
-        $password = $_POST['password'] ?? '';
-        $remember = isset($_POST['remember']);
+// Handle login form
+if (isset($_POST['login'])) {
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
+    $remember = isset($_POST['remember']);
 
-        if ($email === '' || $password === '') {
-            $message = "<div class='alert alert-warning'>⚠️ Please enter both email and password.</div>";
-        } else {
-            try {
-                $stmt = $pdo->prepare("SELECT id, first_name, last_name, email, password_hash, role FROM users WHERE email = ?");
-                $stmt->execute([$email]);
-                $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($email === '' || $password === '') {
+        $message = "<div class='alert alert-warning'>⚠️ Please enter both email and password.</div>";
+    } else {
+        try {
+            $stmt = $pdo->prepare("SELECT id, first_name, last_name, email, password_hash, role, status FROM users WHERE email = ?");
+            $stmt->execute([$email]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-                if ($user && password_verify($password, $user['password_hash'])) {
+            if ($user) {
+                // ❌ Check if banned
+                if ($user['status'] === 'banned') {
+                    $message = "
+                        <div class='alert alert-danger text-center'>
+                        ❌ Your account has been banned. 
+                        Please contact support for assistance.
+                        <br><br>
+                        <button type='button' class='btn btn-danger' data-bs-toggle='modal' data-bs-target='#supportModal'>
+                            <i class='fas fa-envelope me-1'></i> Contact Support
+                        </button>
+                        </div>";
+                } elseif (password_verify($password, $user['password_hash'])) {
                     $_SESSION['currentUser'] = [
                         'id' => $user['id'],
                         'first_name' => $user['first_name'],
@@ -100,9 +154,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 } else {
                     $message = "<div class='alert alert-danger'>❌ Incorrect email or password.</div>";
                 }
-            } catch (PDOException $e) {
-                $message = "<div class='alert alert-danger'>❌ Login error: " . htmlspecialchars($e->getMessage()) . "</div>";
+            } else {
+                $message = "<div class='alert alert-danger'>❌ Incorrect email or password.</div>";
             }
+        } catch (PDOException $e) {
+            $message = "<div class='alert alert-danger'>❌ Login error: " . htmlspecialchars($e->getMessage()) . "</div>";
         }
     }
 }
@@ -284,6 +340,57 @@ include "navbar.php"; // Safe to include after redirect logic
             </div>
         </div>
     </div>
+    <!-- Support Modal -->
+    <div class="modal fade" id="supportModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content p-4">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title gradient-text">Contact Support</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST">
+                    <input type="hidden" name="support" value="1">
+
+                    <div class="mb-3">
+                        <label for="supportEmail" class="form-label">Your Email (optional)</label>
+                        <input type="email" name="user_email" id="supportEmail" class="form-control"
+                            value="<?= htmlspecialchars($email ?? $remembered_email ?? '') ?>"
+                            placeholder="Enter your email for reply">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="supportName" class="form-label">Your Name (optional)</label>
+                        <input type="text" name="user_name" id="supportName" class="form-control"
+                            value="<?= htmlspecialchars($_SESSION['currentUser']['name'] ?? '') ?>"
+                            placeholder="Enter your name to help us identify you">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="supportMessage" class="form-label">Message</label>
+                        <textarea name="message" id="supportMessage" class="form-control" rows="6" required><?= htmlspecialchars(
+    !empty($banned_reason)
+        ? "Hello Support,\n\nMy account has been banned.\nReason (if known): $banned_reason\n\nPlease review and unban my account.\nThank you."
+        : "Hello Support,\n\nMy account has been banned. Please review and unban my account.\nThank you."
+) ?></textarea>
+
+                    </div>
+
+                    <div class="text-center">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-paper-plane me-1"></i> Send Message
+                        </button>
+                    </div>
+
+                    <?php if (isset($_GET['support_sent']) && $_GET['support_sent'] == 1): ?>
+                        <div class="alert alert-success text-center mt-3">
+                            ✅ Your message has been sent to support. They will contact you soon.
+                        </div>
+                    <?php endif; ?>
+                </form>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Footer -->
     <footer class="border-top py-5" style="background: linear-gradient(to bottom, rgba(249,250,251,0.3), rgba(249,250,251,0.5));">

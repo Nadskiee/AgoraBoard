@@ -19,10 +19,10 @@ function sane($s)
 // 📝 Handle post creation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_post_content'])) {
     $content = sane($_POST['new_post_content']);
-    $category = sane($_POST['new_post_category'] ?? 'General');
+    $categoryId = !empty($_POST['new_post_category']) ? (int)$_POST['new_post_category'] : null;
     $title = sane($_POST['new_post_title'] ?? '');
-    $stmt = $pdo->prepare("INSERT INTO community_posts (title, content, category, created_by) VALUES (?, ?, ?, ?)");
-    $stmt->execute([$title, $content, $category, $userId]);
+    $stmt = $pdo->prepare("INSERT INTO community_posts (title, content, category_id, created_by, created_at) VALUES (?, ?, ?, ?, NOW()) ");
+    $stmt->execute([$title, $content, $categoryId, $userId]);
     header("Location: dashboard.php");
     exit;
 }
@@ -33,13 +33,18 @@ if (
     isset($_POST['edit_post_index'], $_POST['edit_post_content']) &&
     strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest'
 ) {
-
     header('Content-Type: application/json');
     $postId = (int)$_POST['edit_post_index'];
-    $newContent = trim($_POST['edit_post_content']);
+    $newContent = sane($_POST['edit_post_content']);
+    $newTitle = sane($_POST['edit_post_title'] ?? '');
+    $categoryId = !empty($_POST['edit_post_category']) ? (int)$_POST['edit_post_category'] : null;
 
-    $stmt = $pdo->prepare("UPDATE community_posts SET content=? WHERE id=? AND created_by=? AND deleted_at IS NULL");
-    $stmt->execute([$newContent, $postId, $userId]);
+    $stmt = $pdo->prepare("
+        UPDATE community_posts
+        SET title = ?, content = ?, category_id = ?
+        WHERE id = ? AND created_by = ?
+    ");
+    $stmt->execute([$newTitle, $newContent, $categoryId, $postId, $userId]);
 
     echo json_encode([
         'success' => $stmt->rowCount() > 0,
@@ -47,7 +52,6 @@ if (
     ]);
     exit;
 }
-
 
 // 🗑️ Soft delete post
 if (isset($_POST['delete_post_id'])) {
@@ -125,28 +129,36 @@ if (
 
 // 📅 Fetch unpinned posts
 $stmtUnpinned = $pdo->query("
-    SELECT p.*, u.first_name, u.last_name, u.role,
-        (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_likes,
-        (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_comments,
-        (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_bookmarks
+    SELECT p.*, 
+           u.first_name, u.last_name, u.role,
+           c.name AS category_name,
+           (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_likes,
+           (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_comments,
+           (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_bookmarks
     FROM community_posts p
     LEFT JOIN users u ON p.created_by = u.id
+    LEFT JOIN categories c ON p.category_id = c.id
     WHERE p.is_pinned = 0 AND p.deleted_at IS NULL
     ORDER BY p.created_at DESC
 ");
+
 $posts = $stmtUnpinned->fetchAll(PDO::FETCH_ASSOC);
 
 // 📅 Fetch pinned posts
 $stmtPinned = $pdo->query("
-    SELECT p.*, u.first_name, u.last_name, u.role,
-        (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_likes,
-        (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_comments,
-        (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_bookmarks
+    SELECT p.*, 
+           u.first_name, u.last_name, u.role,
+           c.name AS category_name,
+           (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_likes,
+           (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_comments,
+           (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_bookmarks
     FROM community_posts p
     LEFT JOIN users u ON p.created_by = u.id
+    LEFT JOIN categories c ON p.category_id = c.id
     WHERE p.is_pinned = 1 AND p.deleted_at IS NULL
     ORDER BY p.created_at DESC
 ");
+
 $pinnedPosts = $stmtPinned->fetchAll(PDO::FETCH_ASSOC);
 
 // 💬 Fetch comments per post
@@ -181,6 +193,29 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([$today]);
 $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// 📝 Handle report submission
+$userId = $_SESSION['currentUser']['id'] ?? null;
+$postId = $_POST['post_id'] ?? null;
+$postType = $_POST['post_type'] ?? null;
+$reason = $_POST['reason'] ?? null;
+$otherReason = trim($_POST['other_reason'] ?? '');
+
+if ($reason === 'Other' && empty($otherReason)) {
+    echo json_encode(['success' => false, 'message' => 'Please specify the reason.']);
+    exit;
+}
+
+$finalReason = $reason === 'Other' ? $otherReason : $reason;
+
+try {
+    $stmt = $pdo->prepare("INSERT INTO reports (reporter_id, post_type, post_id, reason) VALUES (?, ?, ?, ?)");
+    $stmt->execute([$userId, $postType, $postId, $finalReason]);
+
+    echo json_encode(['success' => true, 'message' => 'Report submitted successfully.']);
+} catch (PDOException $e) {
+    echo json_encode(['success' => false, 'message' => 'Error submitting report.']);
+}
 ?>
 
 <!doctype html>
@@ -190,14 +225,14 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AgoraBoard - Home</title>
-    <link rel="stylesheet" href="assets/dashboard.css?v=<?php echo time(); ?>">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
-
+    <link rel="stylesheet" href="assets/dashboard.css?v=<?php echo time(); ?>">
 </head>
 
 <body>
-
+    <?php include 'user_sidebar.php'; ?>
     <div class="modal fade" id="editPostModal" tabindex="-1" aria-labelledby="editPostModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -221,7 +256,7 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 
     <div class="modal fade" id="editCommentModal" tabindex="-1" aria-labelledby="editCommentModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-sm">
+        <div class="modal-dialog modal-md">
             <div class="modal-content">
                 <form id="editCommentForm" method="POST" action="">
                     <div class="modal-header">
@@ -241,32 +276,43 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
     </div>
+    <!-- Report Post Modal -->
+    <div class="modal fade" id="reportModal" tabindex="-1" aria-labelledby="reportModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-md"> <!-- medium width -->
+            <div class="modal-content">
+                <form id="reportForm" method="POST">
+                    <input type="hidden" name="post_id" id="reportPostId" value="">
+                    <input type="hidden" name="post_type" id="reportPostType" value="<?= $postType ?? 'community'; ?>">
 
-    <!-- 🧭 Sidebar -->
-    <div class="sidebar">
-        <div class="sidebar-content">
-            <h4 class="mb-4"><i class="bi bi-people-fill me-2"></i> AgoraBoard</h4>
-            <nav class="nav flex-column">
-                <a href="dashboard.php" class="nav-link"><i class="bi bi-house-door"></i> Dashboard</a>
-                <a href="public-safety.php" class="nav-link"><i class="bi bi-shield-exclamation"></i> Public Safety</a>
-                <a href="lost-and-found.php" class="nav-link"><i class="bi bi-search"></i> Lost & Found</a>
-                <a href="event.php" class="nav-link active"><i class="bi bi-calendar-event"></i> Events</a>
-                <a href="jobs.php" class="nav-link"><i class="bi bi-briefcase"></i> Jobs</a>
-                <a href="polls_view.php" class="nav-link"><i class="bi bi-bar-chart-line"></i> Polls</a>
-                <a href="volunteering.php" class="nav-link"><i class="bi bi-heart"></i> Volunteering</a>
-                <hr class="my-3 border-white opacity-25">
-                <a href="bookmarks_view.php" class="nav-link"><i class="bi bi-bookmark"></i> Bookmarks</a>
-                <a href="#" class="nav-link"><i class="bi bi-gear"></i> Settings</a>
-            </nav>
-        </div>
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="reportModalLabel">Report Post</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
 
-        <div class="sidebar-footer">
-            <form action="logout.php" method="POST" id="logoutForm">
-                <input type="hidden" name="logout" value="1">
-                <button type="button" class="nav-link logout-btn w-100 text-start" onclick="confirmLogout()">
-                    <i class="bi bi-box-arrow-right"></i> Logout
-                </button>
-            </form>
+                    <div class="modal-body">
+                        <label for="reason" class="form-label">Reason for reporting:</label>
+                        <select name="reason" id="reason" class="form-select mb-3" required>
+                            <option value="">-- Select Reason --</option>
+                            <option value="Spam">Spam</option>
+                            <option value="Harassment or Bullying">Harassment or Bullying</option>
+                            <option value="Hate Speech">Hate Speech</option>
+                            <option value="Nudity or Sexual Content">Nudity or Sexual Content</option>
+                            <option value="False Information">False Information</option>
+                            <option value="Other">Other</option>
+                        </select>
+
+                        <div id="otherReasonDiv" style="display: none;">
+                            <label for="other_reason" class="form-label">Please specify:</label>
+                            <textarea name="other_reason" id="other_reason" class="form-control" rows="3" placeholder="Describe your reason"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary btn-sm bg-danger border-danger">Report</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -335,12 +381,20 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <div class="main-feed">
                 <div class="d-flex gap-2 mb-3 filter-button-group">
                     <button class="btn btn-sm active" data-tag="">ALL</button>
-                    <button class="btn btn-sm" data-tag="Event">EVENT</button>
-                    <button class="btn btn-sm" data-tag="Alert">ALERT</button>
-                    <button class="btn btn-sm" data-tag="Lost and Found">LOST & FOUND</button>
-                    <button class="btn btn-sm" data-tag="Volunteer">VOLUNTEER</button>
-                    <button class="btn btn-sm" data-tag="Job">JOB</button>
+                    <?php
+                    // ✅ Fetch categories only once at the top
+                    $categories = $pdo->query("SELECT id, name FROM categories WHERE deleted_at IS NULL ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+                    $defaultCategoryId = $categories[0]['id'] ?? null;
+                    foreach ($categories as $cat):
+                        $catName = htmlspecialchars($cat['name'], ENT_QUOTES);
+                        $safeDataTag = htmlspecialchars($cat['name'], ENT_QUOTES);
+                    ?>
+                        <button class="btn btn-sm" data-tag="<?= $safeDataTag; ?>">
+                            <?= strtoupper($catName); ?>
+                        </button>
+                    <?php endforeach; ?>
                 </div>
+
 
                 <div class="composer mb-4">
                     <form method="POST">
@@ -371,30 +425,22 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <div class="d-flex flex-column flex-grow-1 me-3">
                                 <!-- 🏷️ Tag Selection -->
                                 <div class="d-flex gap-2 flex-wrap">
-                                    <?php
-                                    $tags = [
-                                        'General' => 'General',
-                                        'Event' => 'Event',
-                                        'Alert' => 'Alert',
-                                        'Lost and Found' => 'Lost and Found',
-                                        'Volunteer' => 'Volunteer',
-                                        'Job' => 'Job'
-                                    ];
-                                    foreach ($tags as $label => $value):
-                                        $safeId = 'tag_' . strtolower(str_replace([' ', '&'], ['_', 'and'], $value));
+                                    <?php foreach ($categories as $cat):
+                                        $safeId = 'tag_' . strtolower(str_replace([' ', '&'], ['_', 'and'], $cat['name']));
                                     ?>
                                         <input type="radio"
                                             class="btn-check"
                                             name="new_post_category"
                                             id="<?= $safeId; ?>"
-                                            value="<?= $value; ?>"
-                                            <?= $value === 'General' ? 'checked' : ''; ?>>
+                                            value="<?= $cat['id']; ?>"
+                                            <?= ($cat['id'] == $defaultCategoryId) ? 'checked' : ''; ?>>
 
                                         <label class="btn btn-outline-secondary btn-sm tag-btn"
                                             for="<?= $safeId; ?>">
-                                            <?= htmlspecialchars($label, ENT_QUOTES); ?>
+                                            <?= htmlspecialchars($cat['name'], ENT_QUOTES); ?>
                                         </label>
                                     <?php endforeach; ?>
+
                                 </div>
                             </div>
 
@@ -417,7 +463,7 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                         $postRole = $post['role'] ?? '';
                         $postTime = date('M d, Y H:i', strtotime($post['created_at']));
-                        $postTag = $post['category'] ?? 'General';
+                        $postTag = $post['category_name'] ?? 'General';
                         $postTitle = $post['title'] ?? '';
                         $postContent = $post['content'] ?? '';
                         $postLikes = $post['total_likes'] ?? 0;
@@ -498,15 +544,17 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                                 <button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2"></i>Delete</button>
                                                             </form>
                                                         </li>
+
+                                                    <?php endif; ?>
+                                                    <?php if (!$isCurrentUserPost): ?>
                                                         <li>
-                                                            <hr class="dropdown-divider">
+                                                            <a class="dropdown-item text-danger report-post-btn" href="#"
+                                                                data-post-id="<?= $postId; ?>"
+                                                                data-post-type="<?= $postType; ?>">
+                                                                <i class="bi bi-flag me-2"></i>Report
+                                                            </a>
                                                         </li>
                                                     <?php endif; ?>
-                                                    <li>
-                                                        <a class="dropdown-item text-danger" href="#" onclick="showCustomAlert('Report functionality coming soon.'); return false;">
-                                                            <i class="bi bi-flag me-2"></i>Report
-                                                        </a>
-                                                    </li>
                                                 </ul>
                                             </div>
 
@@ -759,12 +807,12 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
             // 🔍 Search, 🔃 Sort, 🏷️ Filter Logic
             function renderPosts() {
                 const query = searchInput.value.toLowerCase();
-                const selectedTag = document.querySelector('.filter-button-group .btn.active')?.getAttribute('data-tag') || '';
+                const selectedTag = document.querySelector('.filter-button-group .btn.active')?.getAttribute('data-tag')?.toLowerCase() || '';
                 const sortBy = sortSelect.value;
 
                 const posts = allPosts // ✅ Always filter from full list
                     .filter(post =>
-                        (!selectedTag || post.tag === selectedTag) &&
+                        (!selectedTag || post.tag.toLowerCase() === selectedTag) &&
                         (post.title.includes(query) || post.content.includes(query))
                     );
 
@@ -1086,44 +1134,36 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             // ✏️ Comment Edit Modal
             const editCommentModal = document.getElementById('editCommentModal');
+            const editCommentModalInstance = new bootstrap.Modal(editCommentModal);
+            const editCommentIndex = document.getElementById('editCommentIndex');
+            const editCommentText = document.getElementById('editCommentText');
+
             if (editCommentModal) {
-                document.querySelectorAll('.btn-edit-comment').forEach(button => {
-                    button.addEventListener('click', () => {
-                        const postId = button.getAttribute('data-post-index');
-                        const commentId = button.getAttribute('data-comment-id');
-                        const commentText = button.getAttribute('data-comment-text');
+                // document.addEventListener('click', e => {
+                //     const editBtn = e.target.closest('.btn-edit-comment');
+                //     if (editBtn) {
+                //         const commentId = editBtn.dataset.commentId;
+                //         const commentText = editBtn.dataset.commentText;
 
-                        document.getElementById('editCommentPostIndex').value = postId;
-                        document.getElementById('editCommentIndex').value = commentId;
-                        document.getElementById('editCommentText').value = commentText;
+                //         editCommentIndex.value = commentId;
+                //         editCommentText.value = commentText;
 
-                        // ✅ Explicitly show the modal
-                        console.log('Edit clicked:', {
-                            postId,
-                            commentId,
-                            commentText
-                        });
-                        const modalInstance = new bootstrap.Modal(editCommentModal);
-                        modalInstance.show();
-                    });
-                });
+                //         editCommentModalInstance.show();
+                //     }
+                // });
+                // // ✏️ Attach edit post buttons
+                // document.querySelectorAll('.edit-post-btn').forEach(btn => {
+                //     btn.setAttribute('data-bs-toggle', 'modal');
+                //     btn.setAttribute('data-bs-target', '#editPostModal');
+                // });
 
-                // ✏️ Attach edit post buttons
-                document.querySelectorAll('.edit-post-btn').forEach(btn => {
-                    btn.setAttribute('data-bs-toggle', 'modal');
-                    btn.setAttribute('data-bs-target', '#editPostModal');
-                });
+                // const editCommentModal = document.getElementById('editCommentModal');
+                // const editCommentIndex = document.getElementById('editCommentIndex');
+                // const editCommentText = document.getElementById('editCommentText');
 
-                const editCommentModal = document.getElementById('editCommentModal');
-                const editCommentIndex = document.getElementById('editCommentIndex');
-                const editCommentText = document.getElementById('editCommentText');
-
-                // ✅ Event Delegation for Edit + Delete buttons
                 document.addEventListener('click', async e => {
+                    // EDIT COMMENT
                     const editBtn = e.target.closest('.btn-edit-comment');
-                    const deleteBtn = e.target.closest('.btn-delete-comment');
-
-                    // 📝 EDIT COMMENT — Open Modal
                     if (editBtn) {
                         const commentId = editBtn.dataset.commentId;
                         const commentText = editBtn.dataset.commentText;
@@ -1131,11 +1171,12 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         editCommentIndex.value = commentId;
                         editCommentText.value = commentText;
 
-                        const modal = new bootstrap.Modal(editCommentModal);
-                        modal.show();
+                        editCommentModalInstance.show(); // use the single instance
+                        return; // stop here to avoid triggering delete logic
                     }
 
-                    // 🗑️ DELETE COMMENT
+                    // DELETE COMMENT
+                    const deleteBtn = e.target.closest('.btn-delete-comment');
                     if (deleteBtn) {
                         const commentId = deleteBtn.dataset.commentId;
                         const commentCard = document.querySelector(`[data-comment-id="${commentId}"]`);
@@ -1155,10 +1196,7 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                                 const result = await response.json();
                                 if (result.success) {
-                                    // Remove comment visually
                                     commentCard.remove();
-
-                                    // 🔢 Update comment counter
                                     if (postId) {
                                         const counter = document.getElementById(`comment-count-${postId}`);
                                         if (counter) {
@@ -1173,6 +1211,7 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         }
                     }
                 });
+
 
                 // ✅ Handle comment edit submission
                 document.getElementById('editCommentForm').addEventListener('submit', async e => {
@@ -1213,6 +1252,8 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         console.error('Comment edit failed:', error);
                         alert('Network error.');
                     }
+                    editCommentModalInstance.hide();
+
                 });
             }
 
@@ -1330,7 +1371,70 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         });
                 });
             });
+            // Show/hide "Other" reason textarea
+            const reasonSelect = document.getElementById('reason');
+            const otherDiv = document.getElementById('otherReasonDiv');
+            reasonSelect.addEventListener('change', () => {
+                if (reasonSelect.value === 'Other') {
+                    otherDiv.style.display = 'block';
+                    document.getElementById('other_reason').required = true;
+                } else {
+                    otherDiv.style.display = 'none';
+                    document.getElementById('other_reason').required = false;
+                }
+            });
 
+            // Open modal and set post ID & type
+            document.querySelectorAll('.report-post-btn').forEach(btn => {
+                btn.addEventListener('click', e => {
+                    e.preventDefault();
+                    const postId = btn.getAttribute('data-post-id');
+                    const postType = btn.getAttribute('data-post-type') || 'community';
+                    document.getElementById('reportPostId').value = postId;
+                    document.getElementById('reportPostType').value = postType;
+
+                    const reportModal = new bootstrap.Modal(document.getElementById('reportModal'));
+                    reportModal.show();
+                });
+            });
+
+            // Submit report via AJAX
+            document.getElementById('reportForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+
+                const formData = new FormData(this);
+                const reason = formData.get('reason');
+
+                // Use "Other" reason if selected
+                if (reason === 'Other') {
+                    const otherText = document.getElementById('other_reason').value.trim();
+                    if (!otherText) {
+                        alert('Please specify your reason.');
+                        return;
+                    }
+                    formData.set('reason', otherText);
+                }
+
+                try {
+                    const res = await fetch('report_post.php', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await res.json();
+                    alert(data.message);
+                    if (data.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('reportModal')).hide();
+                        this.reset();
+                        otherDiv.style.display = 'none'; // hide Other textarea after submit
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('Error reporting post.');
+                }
+            });
+
+            // Update Attend/Leave button state
             function updateButtonState(button, isAttending) {
                 if (!button) return;
 
@@ -1344,6 +1448,7 @@ $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     button.innerHTML = '<i class="bi bi-person-plus"></i> Join Event';
                 }
             }
+
 
             // 🔐 Logout Confirmation
             window.confirmLogout = function() {

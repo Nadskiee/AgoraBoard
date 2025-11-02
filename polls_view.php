@@ -40,34 +40,7 @@ $polls = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 <body>
     <div class="dashboard-layout d-flex">
-
-        <div class="sidebar">
-            <div>
-                <h4 class="mb-4"><i class="bi bi-people-fill me-2"></i> AgoraBoard</h4>
-                <nav class="nav flex-column">
-                    <a href="dashboard.php" class="nav-link active"><i class="bi bi-house-door"></i> Dashboard</a>
-                    <a href="public-safety.php" class="nav-link"><i class="bi bi-shield-exclamation"></i> Public Safety</a>
-                    <a href="lost-and-found.php" class="nav-link"><i class="bi bi-search"></i> Lost and Found</a>
-                    <a href="event.php" class="nav-link"><i class="bi bi-calendar-event"></i> Event</a>
-                    <a href="jobs.php" class="nav-link"><i class="bi bi-briefcase"></i> Jobs</a>
-                    <a href="polls_view.php" class="nav-link"><i class="bi bi-bar-chart-line"></i> Polls</a>
-                    <a href="volunteering.php" class="nav-link"><i class="bi bi-heart"></i> Volunteering</a>
-                    <hr class="my-3 border-white opacity-25">
-
-                    <a href="bookmarks_view.php" class="nav-link"><i class="bi bi-bookmark"></i> Bookmarks</a>
-                    <a href="#" class="nav-link"><i class="bi bi-gear"></i> Settings</a>
-                </nav>
-            </div>
-
-            <div class="sidebar-footer">
-                <form action="logout.php" method="POST" class="m-0" id="logoutForm">
-                    <input type="hidden" name="logout" value="1">
-                    <button type="button" class="nav-link logout-btn w-100" onclick="confirmLogout()">
-                        <i class="bi bi-box-arrow-right"></i> Logout
-                    </button>
-                </form>
-            </div>
-        </div>
+        <?php include 'user_sidebar.php'; ?>
 
         <!-- ✅ Main Content -->
         <div class="main-content flex-grow-1 p-4">
