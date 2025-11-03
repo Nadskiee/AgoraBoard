@@ -14,7 +14,7 @@ $categories = $categoryQuery->fetchAll(PDO::FETCH_ASSOC);
 $query = "SELECT p.title, p.content, c.name AS category_name, p.is_pinned 
           FROM community_posts p
           LEFT JOIN categories c ON p.category_id = c.id
-          WHERE 1";
+          WHERE p.deleted_at IS NULL";
 $params = [];
 
 // Add search - FIXED (aliased table)
