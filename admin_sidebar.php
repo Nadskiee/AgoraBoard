@@ -154,6 +154,12 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                     <i class="fas fa-envelope me-2"></i> Support
                 </a>
             </li>
+            <li>
+                <a href="admin_profile.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'admin_profile.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-user-circle me-2"></i> Profile
+                </a>
+            </li>
+
             <!-- <li>
                 <a href="events.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'events.php' ? 'active' : ''; ?>">
                     <i class="fas fa-calendar-alt me-2"></i> Events

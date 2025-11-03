@@ -155,7 +155,12 @@ if (isset($_POST['login'])) {
                     $message = "<div class='alert alert-danger'>❌ Incorrect email or password.</div>";
                 }
             } else {
-                $message = "<div class='alert alert-danger'>❌ Incorrect email or password.</div>";
+                $message = "
+        <div class='alert alert-danger'>
+            ❌ Incorrect email or password.
+            <br>If you recently requested a password reset, make sure you're using the temporary password provided.
+        </div>
+    ";
             }
         } catch (PDOException $e) {
             $message = "<div class='alert alert-danger'>❌ Login error: " . htmlspecialchars($e->getMessage()) . "</div>";
@@ -368,10 +373,10 @@ include "navbar.php"; // Safe to include after redirect logic
                     <div class="mb-3">
                         <label for="supportMessage" class="form-label">Message</label>
                         <textarea name="message" id="supportMessage" class="form-control" rows="6" required><?= htmlspecialchars(
-    !empty($banned_reason)
-        ? "Hello Support,\n\nMy account has been banned.\nReason (if known): $banned_reason\n\nPlease review and unban my account.\nThank you."
-        : "Hello Support,\n\nMy account has been banned. Please review and unban my account.\nThank you."
-) ?></textarea>
+                                                                                                                !empty($banned_reason)
+                                                                                                                    ? "Hello Support,\n\nMy account has been banned.\nReason (if known): $banned_reason\n\nPlease review and unban my account.\nThank you."
+                                                                                                                    : "Hello Support,\n\nMy account has been banned. Please review and unban my account.\nThank you."
+                                                                                                            ) ?></textarea>
 
                     </div>
 

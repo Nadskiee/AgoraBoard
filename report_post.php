@@ -2,31 +2,31 @@
 session_start();
 require_once 'db_connect.php';
 
-// 🔒 Must be logged in
-if (!isset($_SESSION['currentUser'])) {
-    echo json_encode(['success' => false, 'message' => 'You must be logged in to report posts.']);
-    exit;
-}
+header('Content-Type: application/json');
 
 $userId = $_SESSION['currentUser']['id'] ?? null;
 $postId = $_POST['post_id'] ?? null;
-$postType = $_POST['post_type'] ?? null;
-$reason = trim($_POST['reason'] ?? '');
+$categoryId = $_POST['category_id'] ?? null;
+$reason = $_POST['reason'] ?? null;
+$otherReason = trim($_POST['other_reason'] ?? '');
 
-// ✅ Validate required fields
-if (!$postId || !$postType || empty($reason)) {
-    echo json_encode(['success' => false, 'message' => 'Missing post ID, post type, or reason.']);
+if (!$userId || !$postId || !$reason || !$categoryId) {
+    echo json_encode(['success' => false, 'message' => 'Missing required fields.']);
     exit;
 }
 
+$finalReason = $reason === 'Other' ? $otherReason : $reason;
+$postType = 'general'; // ✅ Simplified
+
 try {
     $stmt = $pdo->prepare("
-        INSERT INTO reports (reporter_id, post_type, post_id, reason, created_at) 
+        INSERT INTO reports (reporter_id, post_type, post_id, reason, created_at)
         VALUES (?, ?, ?, ?, NOW())
     ");
-    $stmt->execute([$userId, $postType, $postId, $reason]);
+    $stmt->execute([$userId, $postType, $postId, $finalReason]);
 
-    echo json_encode(['success' => true, 'message' => 'Post reported successfully.']);
+    echo json_encode(['success' => true, 'message' => 'Report submitted successfully.']);
 } catch (PDOException $e) {
-    echo json_encode(['success' => false, 'message' => 'Error reporting post: ' . $e->getMessage()]);
+    error_log("Report error: " . $e->getMessage());
+    echo json_encode(['success' => false, 'message' => 'Error submitting report.']);
 }

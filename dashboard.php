@@ -214,7 +214,7 @@ try {
 
     echo json_encode(['success' => true, 'message' => 'Report submitted successfully.']);
 } catch (PDOException $e) {
-    echo json_encode(['success' => false, 'message' => 'Error submitting report.']);
+    // echo json_encode(['success' => false, 'message' => 'Error submitting report.']);
 }
 ?>
 
@@ -278,11 +278,11 @@ try {
     </div>
     <!-- Report Post Modal -->
     <div class="modal fade" id="reportModal" tabindex="-1" aria-labelledby="reportModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-md"> <!-- medium width -->
+        <div class="modal-dialog modal-md">
             <div class="modal-content">
                 <form id="reportForm" method="POST">
-                    <input type="hidden" name="post_id" id="reportPostId" value="">
-                    <input type="hidden" name="post_type" id="reportPostType" value="<?= $postType ?? 'community'; ?>">
+                    <input type="hidden" name="post_id" id="reportPostId">
+                    <input type="hidden" name="category_id" id="reportCategoryId">
 
                     <div class="modal-header">
                         <h5 class="modal-title" id="reportModalLabel">Report Post</h5>
@@ -309,12 +309,13 @@ try {
 
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary btn-sm bg-danger border-danger">Report</button>
+                        <button type="submit" class="btn btn-danger btn-sm">Report</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
+
 
     <div class="main-content">
         <header class="main-header mb-4 d-flex justify-content-between align-items-center flex-wrap gap-3">
@@ -548,11 +549,15 @@ try {
                                                     <?php endif; ?>
                                                     <?php if (!$isCurrentUserPost): ?>
                                                         <li>
-                                                            <a class="dropdown-item text-danger report-post-btn" href="#"
-                                                                data-post-id="<?= $postId; ?>"
-                                                                data-post-type="<?= $postType; ?>">
+                                                            <a href="#"
+                                                                class="dropdown-item text-danger report-post-btn"
+                                                                data-bs-toggle="modal"
+                                                                data-bs-target="#reportModal"
+                                                                data-post-id="<?= $post['id']; ?>"
+                                                                data-category-id="<?= $post['category_id']; ?>">
                                                                 <i class="bi bi-flag me-2"></i>Report
                                                             </a>
+
                                                         </li>
                                                     <?php endif; ?>
                                                 </ul>
@@ -1371,30 +1376,42 @@ try {
                         });
                 });
             });
+
+            let reportModalInstance = null;
+
+            // 🏳️ Report Post Modal Setup
+            const reportModal = document.getElementById('reportModal');
+            reportModal.addEventListener('show.bs.modal', function(event) {
+                const trigger = event.relatedTarget;
+                const postId = trigger.getAttribute('data-post-id');
+                const categoryId = trigger.getAttribute('data-category-id');
+
+                document.getElementById('reportPostId').value = postId;
+                document.getElementById('reportCategoryId').value = categoryId;
+            });
+
+
             // Show/hide "Other" reason textarea
             const reasonSelect = document.getElementById('reason');
             const otherDiv = document.getElementById('otherReasonDiv');
             reasonSelect.addEventListener('change', () => {
-                if (reasonSelect.value === 'Other') {
-                    otherDiv.style.display = 'block';
-                    document.getElementById('other_reason').required = true;
-                } else {
-                    otherDiv.style.display = 'none';
-                    document.getElementById('other_reason').required = false;
-                }
+                const isOther = reasonSelect.value === 'Other';
+                otherDiv.style.display = isOther ? 'block' : 'none';
+                document.getElementById('other_reason').required = isOther;
             });
 
             // Open modal and set post ID & type
             document.querySelectorAll('.report-post-btn').forEach(btn => {
                 btn.addEventListener('click', e => {
-                    e.preventDefault();
+                    // e.preventDefault();
                     const postId = btn.getAttribute('data-post-id');
-                    const postType = btn.getAttribute('data-post-type') || 'community';
+                    const postType = btn.getAttribute('data-post-type') || 'general';
                     document.getElementById('reportPostId').value = postId;
                     document.getElementById('reportPostType').value = postType;
 
-                    const reportModal = new bootstrap.Modal(document.getElementById('reportModal'));
-                    reportModal.show();
+                    const modalElement = document.getElementById('reportModal');
+                    // reportModalInstance = new bootstrap.Modal(modalElement);
+                    // reportModalInstance.show();
                 });
             });
 
@@ -1404,8 +1421,8 @@ try {
 
                 const formData = new FormData(this);
                 const reason = formData.get('reason');
+                const otherDiv = document.getElementById('otherReasonDiv');
 
-                // Use "Other" reason if selected
                 if (reason === 'Other') {
                     const otherText = document.getElementById('other_reason').value.trim();
                     if (!otherText) {
@@ -1424,9 +1441,11 @@ try {
                     const data = await res.json();
                     alert(data.message);
                     if (data.success) {
-                        bootstrap.Modal.getInstance(document.getElementById('reportModal')).hide();
+                        const modalElement = document.getElementById('reportModal');
+                        const instance = bootstrap.Modal.getInstance(modalElement);
+                        if (instance) instance.hide();
                         this.reset();
-                        otherDiv.style.display = 'none'; // hide Other textarea after submit
+                        otherDiv.style.display = 'none';
                     }
                 } catch (err) {
                     console.error(err);
