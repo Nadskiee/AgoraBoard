@@ -1,5 +1,5 @@
 <?php
-require_once 'db_connect.php'; // defines $pdo
+require_once 'db.php'; // defines $pdo
 include 'navbar.php';
 
 // Search & filter inputs
@@ -64,8 +64,6 @@ foreach ($recentPolls as $row) {
     ];
 }
 ?>
-
-
 
 <!DOCTYPE html>
 <html lang="en">

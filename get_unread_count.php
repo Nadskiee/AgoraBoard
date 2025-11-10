@@ -1,5 +1,5 @@
 <?php
-require 'db_connect.php';
+require 'db.php';
 session_start();
 $userId = $_SESSION['currentUser']['id'] ?? null;
 

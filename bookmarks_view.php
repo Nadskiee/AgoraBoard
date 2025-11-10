@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once 'db_connect.php';
+require_once 'db.php';
 
 // 🛡️ Auth check
 if (!isset($_SESSION['currentUser'])) {
@@ -41,6 +41,9 @@ try {
 } catch (PDOException $e) {
     die("Database error: " . $e->getMessage());
 }
+
+// --- NEW: Set active page for the sidebar ---
+$active_page = 'bookmarks'; 
 ?>
 
 <!doctype html>
@@ -50,43 +53,16 @@ try {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AgoraBoard - Bookmarks</title>
-    <link rel="stylesheet" href="assets/dashboard.css?v=<?= time(); ?>">
+    
+    <link rel="stylesheet" href="assets/dashboard.css?v=<?= time(); ?>"> 
+    
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
 </head>
 
 <body>
-    <!-- 🧭 Sidebar (fixed position like dashboard/polls) -->
-    <div class="sidebar">
-        <div class="sidebar-content">
-            <h4 class="mb-4"><i class="bi bi-people-fill me-2"></i> AgoraBoard</h4>
-            <nav class="nav flex-column">
-                <a href="dashboard.php" class="nav-link"><i class="bi bi-house-door"></i> Dashboard</a>
-                <a href="public-safety.php" class="nav-link"><i class="bi bi-shield-exclamation"></i> Public Safety</a>
-                <a href="lost-and-found.php" class="nav-link"><i class="bi bi-search"></i> Lost & Found</a>
-                <a href="event.php" class="nav-link"><i class="bi bi-calendar-event"></i> Events</a>
-                <a href="jobs.php" class="nav-link"><i class="bi bi-briefcase"></i> Jobs</a>
-                <a href="polls_view.php" class="nav-link"><i class="bi bi-bar-chart-line"></i> Polls</a>
-                <a href="volunteering.php" class="nav-link"><i class="bi bi-heart"></i> Volunteering</a>
+    <?php include 'user_sidebar.php'; ?>
 
-                <hr class="my-3 border-white opacity-25">
-
-                <a href="bookmarks_view.php" class="nav-link active"><i class="bi bi-bookmark"></i> Bookmarks</a>
-                <a href="#" class="nav-link"><i class="bi bi-gear"></i> Settings</a>
-            </nav>
-        </div>
-
-        <div class="sidebar-footer">
-            <form action="logout.php" method="POST" id="logoutForm">
-                <input type="hidden" name="logout" value="1">
-                <button type="button" class="nav-link logout-btn w-100 text-start" onclick="confirmLogout()">
-                    <i class="bi bi-box-arrow-right"></i> Logout
-                </button>
-            </form>
-        </div>
-    </div>
-
-    <!-- 📰 Main Content -->
     <div class="main-content">
         <div class="main-header mb-4">
             <h3 class="fw-bold">📑 My Bookmarks</h3>
@@ -152,15 +128,8 @@ try {
         </div>
     </div>
 
-    <!-- ⚙️ Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        function confirmLogout() {
-            if (confirm("Are you sure you want to log out?")) {
-                document.getElementById('logoutForm').submit();
-            }
-        }
-    </script>
-</body>
+    
+    </body>
 
 </html>

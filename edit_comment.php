@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once 'db_connect.php';
+require_once 'db.php';
 header('Content-Type: application/json');
 
 $userId = $_SESSION['currentUser']['id'] ?? null;
@@ -17,4 +17,3 @@ $stmt->execute([$text, $commentId, $userId]);
 
 echo json_encode(['success' => true, 'message' => 'Comment updated']);
 exit;
-

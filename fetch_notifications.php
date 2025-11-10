@@ -2,7 +2,7 @@
 session_start();
 header('Content-Type: application/json');
 
-require 'db_connect.php';
+require 'db.php';
 $userId = $_SESSION['currentUser']['id'] ?? null;
 
 if (!$userId) {

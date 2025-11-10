@@ -1,6 +1,6 @@
 <?php
 session_start(); // ✅ Must be first
-require_once 'db_connect.php';
+require_once 'db.php';
 header('Content-Type: application/json');
 error_log("User ID: " . ($_SESSION['currentUser']['id'] ?? 'null'));
 
