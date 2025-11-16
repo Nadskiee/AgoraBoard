@@ -16,7 +16,7 @@ if (!$userId || !$postId || !$reason || !$categoryId) {
 }
 
 $finalReason = $reason === 'Other' ? $otherReason : $reason;
-$postType = 'general'; // ✅ Simplified
+$postType = $_POST['post_type'] ?? 'general';
 
 try {
     $stmt = $pdo->prepare("
@@ -25,6 +25,15 @@ try {
     ");
     $stmt->execute([$userId, $postType, $postId, $finalReason]);
 
+    // 2️⃣ Flag the post/comment for admin
+    if ($postType === 'community') {
+        $pdo->prepare("UPDATE community_posts SET is_flagged = 1 WHERE id = ?")
+            ->execute([$postId]);
+    } elseif ($postType === 'comment') {
+        $pdo->prepare("UPDATE comments SET is_flagged = 1 WHERE id = ?")
+            ->execute([$postId]);
+    }
+    
     echo json_encode(['success' => true, 'message' => 'Report submitted successfully.']);
 } catch (PDOException $e) {
     error_log("Report error: " . $e->getMessage());

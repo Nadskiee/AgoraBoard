@@ -24,10 +24,38 @@ if (!$userId || !$postId || $text === '') {
   exit;
 }
 
+// Bad & extreme words
+$extremeWords = ['kill', 'murder', 'rape', 'terrorist', 'bomb', 'threat', 'abuse', 'hate'];
+$badWords = ['fuck','shit','puta','pota','ulol','gago','nigga','bitch','asshole','puki','tite','motherfucker','slut','whore','damn', 'hell', 'crap', 'stupid', 'idiot', 'sucks', 'dumb'];
+
+
+// 🚨 Check for extreme words
+foreach ($extremeWords as $word) {
+  if (stripos($text, $word) !== false) {
+    echo json_encode([
+      'success' => false,
+      'error' => 'Your comment contains prohibited content and cannot be posted.'
+    ]);
+    exit;
+  }
+}
+
+// ⚠️ Check for bad words
+$shouldFlag = 0;
+foreach ($badWords as $word) {
+  if (stripos($text, $word) !== false) {
+    $shouldFlag = 1; // mark comment as flagged
+    break;
+  }
+}
+
 try {
-  // ✅ Insert comment
-  $stmt = $pdo->prepare("INSERT INTO comments (post_type, post_id, user_id, content) VALUES (?, ?, ?, ?)");
-  $stmt->execute([$postType, $postId, $userId, $text]);
+  // ✅ Insert comment with flagged status
+  $stmt = $pdo->prepare("
+    INSERT INTO comments (post_type, post_id, user_id, content, is_flagged, created_at)
+    VALUES (?, ?, ?, ?, ?, NOW())
+");
+  $stmt->execute([$postType, $postId, $userId, $text, $shouldFlag]);
 
 
   if ($stmt->rowCount() === 0) {
@@ -41,6 +69,24 @@ try {
   $last = trim($user['last_name'] ?? '');
   $userName = htmlspecialchars(($first || $last) ? "$first $last" : 'Anonymous');
   $avatar = strtoupper(substr($userName, 0, 1));
+
+  // 🟢 Build comment HTML (add a warning label if flagged)
+  $flagLabel = $shouldFlag ? '<small class="text-warning">[Flagged]</small> ' : '';
+  $commentHTML = '
+    <div class="d-flex gap-2 mb-3 comment-card" data-comment-id="' . $commentId . '">
+      <div class="avatar comment-avatar bg-secondary">' . $avatar . '</div>
+      <div class="w-100">
+        <div class="d-flex justify-content-between">
+          <div>
+            <strong>' . $userName . '</strong> ' . $flagLabel . '
+            <small class="text-muted">• just now</small>
+          </div>
+        </div>
+        <p class="mb-0 comment-text">' . htmlspecialchars($text) . '</p>
+      </div>
+    </div>';
+
+  echo json_encode(['success' => true, 'html' => $commentHTML, 'flagged' => $shouldFlag]);
 
   // ✅ Safe notification block
   try {
@@ -92,43 +138,43 @@ try {
   }
 
 
-  // ✅ Build comment HTML
-  $commentHTML = '
-    <div class="d-flex gap-2 mb-3 comment-card" data-comment-id="' . $commentId . '">
-      <div class="avatar comment-avatar bg-secondary">' . $avatar . '</div>
-      <div class="w-100">
-        <div class="d-flex justify-content-between">
-          <div>
-            <strong>' . $userName . '</strong>
-            <small class="text-muted"> • just now</small>
-          </div>
-          <div class="dropdown">
-            <button class="btn btn-sm btn-link text-muted p-0" type="button" data-bs-toggle="dropdown">
-              <i class="bi bi-three-dots"></i>
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end">
-              <li>
-                <button class="dropdown-item btn-edit-comment"
-                        data-comment-id="' . $commentId . '"
-                        data-comment-text="' . htmlspecialchars($text, ENT_QUOTES) . '"
-                        data-post-index="' . $postId . '">
-                  <i class="bi bi-pencil me-2"></i>Edit
-                </button>
-              </li>
-              <li>
-                <button class="dropdown-item text-danger btn-delete-comment"
-                        data-comment-id="' . $commentId . '">
-                  <i class="bi bi-trash me-2"></i>Delete
-                </button>
-              </li>
-            </ul>
-          </div>
-        </div>
-        <p class="mb-0 comment-text">' . htmlspecialchars($text) . '</p>
-      </div>
-    </div>';
+  // // ✅ Build comment HTML
+  // $commentHTML = '
+  //   <div class="d-flex gap-2 mb-3 comment-card" data-comment-id="' . $commentId . '">
+  //     <div class="avatar comment-avatar bg-secondary">' . $avatar . '</div>
+  //     <div class="w-100">
+  //       <div class="d-flex justify-content-between">
+  //         <div>
+  //           <strong>' . $userName . '</strong>
+  //           <small class="text-muted"> • just now</small>
+  //         </div>
+  //         <div class="dropdown">
+  //           <button class="btn btn-sm btn-link text-muted p-0" type="button" data-bs-toggle="dropdown">
+  //             <i class="bi bi-three-dots"></i>
+  //           </button>
+  //           <ul class="dropdown-menu dropdown-menu-end">
+  //             <li>
+  //               <button class="dropdown-item btn-edit-comment"
+  //                       data-comment-id="' . $commentId . '"
+  //                       data-comment-text="' . htmlspecialchars($text, ENT_QUOTES) . '"
+  //                       data-post-index="' . $postId . '">
+  //                 <i class="bi bi-pencil me-2"></i>Edit
+  //               </button>
+  //             </li>
+  //             <li>
+  //               <button class="dropdown-item text-danger btn-delete-comment"
+  //                       data-comment-id="' . $commentId . '">
+  //                 <i class="bi bi-trash me-2"></i>Delete
+  //               </button>
+  //             </li>
+  //           </ul>
+  //         </div>
+  //       </div>
+  //       <p class="mb-0 comment-text">' . htmlspecialchars($text) . '</p>
+  //     </div>
+  //   </div>';
 
-  echo json_encode(['success' => true, 'html' => $commentHTML]);
+  // echo json_encode(['success' => true, 'html' => $commentHTML]);
 } catch (PDOException $e) {
   error_log("Database error: " . $e->getMessage());
   http_response_code(500);

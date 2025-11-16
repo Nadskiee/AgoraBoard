@@ -144,7 +144,7 @@ $userName = $_SESSION['currentUser']['name'] ?? "User";
             <a href="public-safety.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'public-safety.php' ? 'active' : ''; ?>">
                 <i class="bi bi-shield-exclamation"></i> Public Safety
             </a>
-            <a href="lost-and-found.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'lost-and-found.php' ? 'active' : ''; ?>">
+            <a href="lost_and_found.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'lost-and-found.php' ? 'active' : ''; ?>">
                 <i class="bi bi-search"></i> Lost & Found
             </a>
             <a href="event.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'event.php' ? 'active' : ''; ?>">

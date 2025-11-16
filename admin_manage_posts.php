@@ -8,8 +8,6 @@ if (!isset($_SESSION['currentUser']) || $_SESSION['currentUser']['role'] !== 'ad
     exit();
 }
 
-
-
 // Handle delete action
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
     try {
@@ -32,20 +30,41 @@ if (isset($_GET['action']) && $_GET['action'] === 'toggle_pin' && isset($_GET['i
     }
 }
 
-// Handle update post action
+// Handle flag action
+if (isset($_GET['action']) && $_GET['action'] === 'flag' && isset($_GET['id'])) {
+    try {
+        $stmt = $pdo->prepare("UPDATE community_posts SET is_flagged = 1 WHERE id = ?");
+        $stmt->execute([$_GET['id']]);
+        $success_message = "Post has been flagged!";
+    } catch (PDOException $e) {
+        $error_message = "Error flagging post: " . $e->getMessage();
+    }
+}
+
+
+// Handle unflag action
+if (isset($_GET['action']) && $_GET['action'] === 'unflag' && isset($_GET['id'])) {
+    try {
+        $stmt = $pdo->prepare("UPDATE community_posts SET is_flagged = 0 WHERE id = ?");
+        $stmt->execute([$_GET['id']]);
+        $success_message = "Post marked as safe!";
+    } catch (PDOException $e) {
+        $error_message = "Error unflagging post: " . $e->getMessage();
+    }
+}
+
+
+// ✅ Handle AJAX update post request
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_post') {
+    header('Content-Type: application/json');
     try {
         $stmt = $pdo->prepare("UPDATE community_posts SET title = ?, content = ?, category_id = ? WHERE id = ?");
-        $stmt->execute([
-            $_POST['title'],
-            $_POST['content'],
-            $_POST['category_id'],
-            $_POST['post_id']
-        ]);
-        $success_message = "Post updated successfully!";
+        $stmt->execute([$_POST['title'], $_POST['content'], $_POST['category_id'], $_POST['post_id']]);
+        echo json_encode(['success' => true]);
     } catch (PDOException $e) {
-        $error_message = "Error updating post: " . $e->getMessage();
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     }
+    exit;
 }
 
 $editId = isset($_GET['edit_id']) ? intval($_GET['edit_id']) : null;
@@ -58,6 +77,9 @@ $offset = ($page - 1) * $posts_per_page;
 // Filter by category
 $category_filter = isset($_GET['category']) ? (int)$_GET['category'] : 0;
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+
+// Filter reported posts
+$flaggedOnly = isset($_GET['flagged']) ? true : false;
 
 try {
     // 🔹 Base query
@@ -83,6 +105,10 @@ try {
     if (!empty($search)) {
         $where_conditions[] = "(p.title LIKE :search OR p.content LIKE :search)";
         $params[':search'] = "%$search%";
+    }
+
+    if ($flaggedOnly) {
+        $where_conditions[] = "p.is_flagged = 1";
     }
 
     if (!empty($where_conditions)) {
@@ -154,13 +180,13 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                     <h1 class="h2">Manage Posts</h1>
                 </div>
 
+                <!-- Success / Error -->
                 <?php if (isset($success_message)): ?>
                     <div class="alert alert-success alert-dismissible fade show" role="alert">
                         <?php echo htmlspecialchars($success_message); ?>
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                 <?php endif; ?>
-
                 <?php if (isset($error_message)): ?>
                     <div class="alert alert-danger alert-dismissible fade show" role="alert">
                         <?php echo htmlspecialchars($error_message); ?>
@@ -168,15 +194,14 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                     </div>
                 <?php endif; ?>
 
+                <!-- Filter Form -->
                 <div class="card shadow mb-4">
                     <div class="card-body">
                         <form method="GET" action="admin_manage_posts.php" class="row g-3">
-                            <div class="col-md-4">
-                                <label class="form-label">Search</label>
+                            <div class="col-md-3">
                                 <input type="text" name="search" class="form-control" placeholder="Search posts..." value="<?php echo htmlspecialchars($search); ?>">
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Category</label>
+                            <div class="col-md-3">
                                 <select name="category" class="form-select">
                                     <option value="0">All Categories</option>
                                     <?php foreach ($categories as $cat): ?>
@@ -186,22 +211,21 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <div class="col-md-4 d-flex align-items-end">
-                                <button type="submit" class="btn btn-primary me-2">
-                                    <i class="fas fa-filter me-1"></i> Filter
-                                </button>
-                                <button type="button" id="clearFilter" class="btn btn-secondary">
-                                    <i class="fas fa-redo me-1"></i> Reset
-                                </button>
+                            <div class="col-md-6 d-flex align-items-end">
+                                <button type="submit" class="btn btn-primary me-2"><i class="fas fa-filter me-1"></i> Filter</button>
+                                <button type="button" id="clearFilter" class="btn btn-secondary me-2"><i class="fas fa-redo me-1"></i> Reset</button>
+                                <a href="admin_manage_posts.php" class="btn btn-secondary me-2">All Posts</a>
+                                <a href="admin_manage_posts.php?flagged=1" class="btn btn-danger">Reported Posts</a>
                             </div>
                         </form>
                     </div>
                 </div>
 
+                <!-- Posts Table -->
                 <div class="card shadow mb-4">
                     <div class="card-header py-3">
                         <h6 class="m-0 fw-bold text-primary">
-                            All Posts (<?php echo number_format($total_posts); ?> total)
+                            Posts (<?php echo number_format($total_posts); ?> total)
                         </h6>
                     </div>
                     <div class="card-body">
@@ -209,13 +233,13 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                             <table class="table table-bordered table-hover">
                                 <thead class="table-light">
                                     <tr>
-                                        <th width="5%">ID</th>
-                                        <th width="30%">Title</th>
-                                        <th width="15%">Author</th>
-                                        <th width="12%">Category</th>
-                                        <th width="12%">Date</th>
-                                        <th width="8%">Status</th>
-                                        <th width="18%">Actions</th>
+                                        <th>ID</th>
+                                        <th>Title</th>
+                                        <th>Author</th>
+                                        <th>Category</th>
+                                        <th>Date</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -223,76 +247,71 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                                         <?php foreach ($posts as $post): ?>
                                             <tr>
                                                 <td><?php echo $post['id']; ?></td>
-                                                <td>
-                                                    <?php
-                                                    $title = htmlspecialchars($post['title']);
-                                                    echo strlen($title) > 50 ? substr($title, 0, 50) . '...' : $title;
-                                                    ?>
-                                                </td>
-                                                <td>
-                                                    <?php
-                                                    if ($post['first_name'] && $post['last_name']) {
-                                                        echo htmlspecialchars($post['first_name'] . " " . $post['last_name']);
-                                                    } else {
-                                                        echo '<em class="text-muted">Deleted User</em>';
-                                                    }
-                                                    ?>
-                                                </td>
-                                                <td>
-                                                    <span class="badge bg-secondary">
-                                                        <?php echo htmlspecialchars($post['category_name'] ?? 'Uncategorized'); ?>
-                                                    </span>
-                                                </td>
-                                                <td class="small text-muted">
-                                                    <?php echo date('M j, Y', strtotime($post['created_at'])); ?>
-                                                </td>
+                                                <td><?php echo strlen($post['title']) > 50 ? substr(htmlspecialchars($post['title']), 0, 50) . '...' : htmlspecialchars($post['title']); ?></td>
+                                                <td><?php echo ($post['first_name'] && $post['last_name']) ? htmlspecialchars($post['first_name'] . ' ' . $post['last_name']) : '<em class="text-muted">Deleted User</em>'; ?></td>
+                                                <td><span class="badge bg-secondary"><?php echo htmlspecialchars($post['category_name'] ?? 'Uncategorized'); ?></span></td>
+                                                <td class="small text-muted"><?php echo date('M j, Y', strtotime($post['created_at'])); ?></td>
                                                 <td>
                                                     <?php if ($post['is_pinned']): ?>
-                                                        <span class="badge bg-warning text-dark">
-                                                            <i class="fas fa-thumbtack"></i> Pinned
-                                                        </span>
+                                                        <span class="badge bg-warning text-dark"><i class="fas fa-thumbtack"></i> Pinned</span>
+                                                    <?php elseif ($post['is_flagged']): ?>
+                                                        <span class="badge bg-danger"><i class="fas fa-flag"></i> Reported</span>
                                                     <?php else: ?>
                                                         <span class="badge bg-secondary">Normal</span>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
                                                     <div class="btn-group btn-group-sm" role="group">
-                                                        <button type="button"
-                                                            class="btn btn-outline-info"
-                                                            title="View"
-                                                            data-bs-toggle="modal"
-                                                            data-bs-target="#viewModal"
-                                                            data-post-id="<?php echo $post['id']; ?>"
-                                                            data-post-title="<?php echo htmlspecialchars($post['title']); ?>"
-                                                            data-post-content="<?php echo htmlspecialchars($post['content']); ?>"
-                                                            data-post-category="<?php echo htmlspecialchars($post['category_name'] ?? 'Uncategorized'); ?>"
-                                                            data-post-author="<?php echo ($post['first_name'] && $post['last_name']) ? htmlspecialchars($post['first_name'] . ' ' . $post['last_name']) : 'Deleted User'; ?>"
-                                                            data-post-date="<?php echo date('F j, Y \a\t g:i A', strtotime($post['created_at'])); ?>"
-                                                            data-post-pinned="<?php echo $post['is_pinned'] ? '1' : '0'; ?>">
+                                                        <!-- View -->
+                                                        <button type="button" class="btn btn-outline-info" title="View" data-bs-toggle="modal" data-bs-target="#viewModal"
+                                                            data-post-id="<?= $post['id']; ?>"
+                                                            data-post-title="<?= htmlspecialchars($post['title'], ENT_QUOTES); ?>"
+                                                            data-post-content="<?= htmlspecialchars($post['content'], ENT_QUOTES); ?>"
+                                                            data-post-category="<?= htmlspecialchars($post['category_name'] ?? 'Uncategorized', ENT_QUOTES); ?>"
+                                                            data-post-author="<?= ($post['first_name'] && $post['last_name']) ? htmlspecialchars($post['first_name'] . ' ' . $post['last_name'], ENT_QUOTES) : 'Deleted User'; ?>"
+                                                            data-post-date="<?= date('F j, Y \a\t g:i A', strtotime($post['created_at'])); ?>"
+                                                            data-post-pinned="<?= $post['is_pinned'] ? '1' : '0'; ?>">
                                                             <i class="fas fa-eye"></i>
                                                         </button>
-                                                        <button type="button"
-                                                            class="btn btn-outline-primary editBtn"
-                                                            title="Edit"
-                                                            data-post-id="<?php echo $post['id']; ?>"
-                                                            data-post-title="<?php echo htmlspecialchars($post['title']); ?>"
-                                                            data-post-content="<?php echo htmlspecialchars($post['content']); ?>"
-                                                            data-post-category-id="<?php echo $post['category_id']; ?>">
+
+                                                        <!-- Edit -->
+                                                        <button type="button" class="btn btn-outline-primary editBtn" title="Edit"
+                                                            data-post-id="<?= $post['id']; ?>"
+                                                            data-post-title="<?= htmlspecialchars($post['title'], ENT_QUOTES); ?>"
+                                                            data-post-content="<?= htmlspecialchars($post['content'], ENT_QUOTES); ?>"
+                                                            data-post-category-id="<?= $post['category_id']; ?>">
                                                             <i class="fas fa-edit"></i>
                                                         </button>
 
-                                                        <a href="admin_manage_posts.php?action=toggle_pin&id=<?php echo $post['id']; ?>"
+                                                        <!-- Pin/Unpin with confirm -->
+                                                        <a href="admin_manage_posts.php?action=toggle_pin&id=<?= $post['id']; ?>"
                                                             class="btn btn-outline-warning"
-                                                            title="<?php echo $post['is_pinned'] ? 'Unpin' : 'Pin'; ?>">
+                                                            title="<?= $post['is_pinned'] ? 'Unpin' : 'Pin'; ?>"
+                                                            onclick="return confirm('Are you sure you want to <?= $post['is_pinned'] ? 'unpin' : 'pin'; ?> this post?');">
                                                             <i class="fas fa-thumbtack"></i>
                                                         </a>
-                                                        <button type="button"
-                                                            class="btn btn-outline-danger"
-                                                            title="Delete"
-                                                            data-bs-toggle="modal"
-                                                            data-bs-target="#deleteModal"
-                                                            data-post-id="<?php echo $post['id']; ?>"
-                                                            data-post-title="<?php echo htmlspecialchars($post['title']); ?>">
+
+                                                        <!-- Flag/Unflag -->
+                                                        <?php if ($post['is_flagged']): ?>
+                                                            <a href="admin_manage_posts.php?action=unflag&id=<?= $post['id']; ?>"
+                                                                class="btn btn-success"
+                                                                title="Mark Safe"
+                                                                onclick="return confirm('Are you sure you want to mark this post as safe?');">
+                                                                <i class="fas fa-check"></i>
+                                                            </a>
+                                                        <?php else: ?>
+                                                            <a href="admin_manage_posts.php?action=flag&id=<?= $post['id']; ?>"
+                                                                class="btn btn-danger"
+                                                                title="Flag Post"
+                                                                onclick="return confirm('Are you sure you want to flag this post?');">
+                                                                <i class="fas fa-flag"></i>
+                                                            </a>
+                                                        <?php endif; ?>
+
+                                                        <!-- Delete -->
+                                                        <button type="button" class="btn btn-outline-danger" title="Delete" data-bs-toggle="modal" data-bs-target="#deleteModal"
+                                                            data-post-id="<?= $post['id']; ?>"
+                                                            data-post-title="<?= htmlspecialchars($post['title'], ENT_QUOTES); ?>">
                                                             <i class="fas fa-trash"></i>
                                                         </button>
                                                     </div>
@@ -302,8 +321,7 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                                     <?php else: ?>
                                         <tr>
                                             <td colspan="7" class="text-center text-muted py-4">
-                                                <i class="fas fa-inbox fa-3x mb-3 d-block"></i>
-                                                No posts found
+                                                <i class="fas fa-inbox fa-3x mb-3 d-block"></i>No posts found
                                             </td>
                                         </tr>
                                     <?php endif; ?>
@@ -311,21 +329,25 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                             </table>
                         </div>
 
+                        <!-- Pagination -->
                         <?php if ($total_pages > 1): ?>
                             <nav aria-label="Posts pagination" class="mt-4">
                                 <ul class="pagination justify-content-center">
-                                    <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
-                                        <a class="page-link" href="?page=<?php echo $page - 1; ?>&category=<?php echo $category_filter; ?>&search=<?php echo urlencode($search); ?>">Previous</a>
+                                    <!-- Previous -->
+                                    <li class="page-item <?= $page <= 1 ? 'disabled' : ''; ?>">
+                                        <a class="page-link" href="?page=<?= $page - 1; ?>&category=<?= $category_filter; ?>&search=<?= urlencode($search); ?><?= $flaggedOnly ? '&flagged=1' : ''; ?>">Previous</a>
                                     </li>
 
+                                    <!-- Page numbers -->
                                     <?php for ($i = 1; $i <= $total_pages; $i++): ?>
-                                        <li class="page-item <?php echo $page == $i ? 'active' : ''; ?>">
-                                            <a class="page-link" href="?page=<?php echo $i; ?>&category=<?php echo $category_filter; ?>&search=<?php echo urlencode($search); ?>"><?php echo $i; ?></a>
+                                        <li class="page-item <?= $page == $i ? 'active' : ''; ?>">
+                                            <a class="page-link" href="?page=<?= $i; ?>&category=<?= $category_filter; ?>&search=<?= urlencode($search); ?><?= $flaggedOnly ? '&flagged=1' : ''; ?>"><?= $i; ?></a>
                                         </li>
                                     <?php endfor; ?>
 
-                                    <li class="page-item <?php echo $page >= $total_pages ? 'disabled' : ''; ?>">
-                                        <a class="page-link" href="?page=<?php echo $page + 1; ?>&category=<?php echo $category_filter; ?>&search=<?php echo urlencode($search); ?>">Next</a>
+                                    <!-- Next -->
+                                    <li class="page-item <?= $page >= $total_pages ? 'disabled' : ''; ?>">
+                                        <a class="page-link" href="?page=<?= $page + 1; ?>&category=<?= $category_filter; ?>&search=<?= urlencode($search); ?><?= $flaggedOnly ? '&flagged=1' : ''; ?>">Next</a>
                                     </li>
                                 </ul>
                             </nav>
@@ -515,16 +537,22 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                     method: 'POST',
                     body: formData
                 })
-                .then(res => res.text())
-                .then(result => {
-                    alert('Post updated successfully!');
-                    location.reload();
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        const modalEl = bootstrap.Modal.getInstance(document.getElementById('editModal'));
+                        modalEl.hide();
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
                 })
                 .catch(err => {
                     alert('Error updating post.');
                     console.error(err);
                 });
         });
+
 
         // Handle delete modal data
         const deleteModal = document.getElementById('deleteModal');

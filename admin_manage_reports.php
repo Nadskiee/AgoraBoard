@@ -68,6 +68,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
 
+        // ✅ New: Flag / Unflag post
+        if ($action === 'toggle_flag' && $post_id && $post_type === 'general') {
+            $stmt = $pdo->prepare("SELECT is_flagged FROM community_posts WHERE id = ?");
+            $stmt->execute([$post_id]);
+            $is_flagged = $stmt->fetchColumn();
+            $new_flag = $is_flagged ? 0 : 1;
+            $stmt = $pdo->prepare("UPDATE community_posts SET is_flagged = ? WHERE id = ?");
+            $stmt->execute([$new_flag, $post_id]);
+            echo json_encode(['success' => true, 'new_flag' => $new_flag, 'message' => $new_flag ? 'Post flagged' : 'Post marked safe']);
+            exit;
+        }
+
         if ($action === 'fetch_post' && $post_id && $post_type) {
             switch ($post_type) {
                 case 'comment':
@@ -327,6 +339,7 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                                                             data-post-author="<?= ($r['author_first_name'] && $r['author_last_name']) ? htmlspecialchars($r['author_first_name'] . ' ' . $r['author_last_name']) : 'Deleted User'; ?>"
                                                             data-post-date="<?= date('F j, Y \a\t g:i A', strtotime($r['created_at'])); ?>"
                                                             data-post-deleted="<?= !empty($r['post_deleted_at']) ? '1' : '0'; ?>"
+                                                            data-post-flagged="<?= !empty($r['is_flagged']) ? '1' : '0'; ?>"
                                                             data-post-pinned="<?= !empty($r['is_pinned']) ? '1' : '0'; ?>">
                                                             <i class="fas fa-eye"></i>
                                                         </button>
@@ -392,6 +405,9 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                 <div class="modal-header bg-info text-white">
                     <h5 class="modal-title" id="viewModalLabel">
                         <i class="fas fa-eye me-2"></i>View Post
+                        <span id="viewPostFlagged" class="badge bg-danger ms-2" style="display: none;">
+                            Flagged
+                        </span>
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -534,6 +550,14 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                     location.reload();
                 })
                 .catch(err => console.error(err));
+        }
+
+        const flaggedBadge = document.getElementById('viewPostFlagged');
+
+        if (button.getAttribute('data-post-flagged') === '1') {
+            flaggedBadge.style.display = 'inline-block';
+        } else {
+            flaggedBadge.style.display = 'none';
         }
     </script>
 

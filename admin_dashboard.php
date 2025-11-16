@@ -28,13 +28,14 @@ try {
     $stats['total_categories'] = $result->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 
     // Recent posts (limit 5) - JOIN with categories table
-    $query = "SELECT p.id, p.title, p.created_at, 
-                     u.first_name, u.last_name,
-                     c.name as category_name
-              FROM community_posts p
-              LEFT JOIN users u ON p.created_by = u.id 
-              LEFT JOIN categories c ON p.category_id = c.id
-              ORDER BY p.created_at DESC LIMIT 5";
+    $query = "SELECT p.id, p.title, p.created_at, p.is_flagged, p.is_pinned,
+                 u.first_name, u.last_name,
+                 c.name as category_name
+          FROM community_posts p
+          LEFT JOIN users u ON p.created_by = u.id 
+          LEFT JOIN categories c ON p.category_id = c.id
+          ORDER BY p.created_at DESC LIMIT 5";
+
     $stmt = $pdo->query($query);
     $recent_posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
@@ -42,6 +43,29 @@ try {
     $stats = ['total_posts' => 0, 'total_users' => 0, 'total_categories' => 0];
     $recent_posts = [];
 }
+
+// Handle flag action
+if (isset($_GET['action']) && $_GET['action'] === 'flag' && isset($_GET['id'])) {
+    try {
+        $stmt = $pdo->prepare("UPDATE community_posts SET is_flagged = 1 WHERE id = ?");
+        $stmt->execute([$_GET['id']]);
+        $success_message = "Post has been flagged!";
+    } catch (PDOException $e) {
+        $error_message = "Error flagging post: " . $e->getMessage();
+    }
+}
+
+// Handle unflag action
+if (isset($_GET['action']) && $_GET['action'] === 'unflag' && isset($_GET['id'])) {
+    try {
+        $stmt = $pdo->prepare("UPDATE community_posts SET is_flagged = 0 WHERE id = ?");
+        $stmt->execute([$_GET['id']]);
+        $success_message = "Post marked as safe!";
+    } catch (PDOException $e) {
+        $error_message = "Error unflagging post: " . $e->getMessage();
+    }
+}
+
 
 // This $adminName variable will be used by the sidebar
 $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
@@ -147,6 +171,21 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                                                                     class="btn btn-outline-warning btn-sm" title="Pin/Unpin">
                                                                     <i class="fas fa-thumbtack"></i>
                                                                 </a>
+
+                                                                <!-- Flag/Unflag -->
+                                                                <?php if (!empty($post['is_flagged']) && $post['is_flagged']): ?>
+                                                                    <a href="admin_manage_posts.php?action=unflag&id=<?= $post['id'] ?>"
+                                                                        class="btn btn-success btn-sm" title="Mark Safe"
+                                                                        onclick="return confirm('Are you sure you want to mark this post as safe?');">
+                                                                        <i class="fas fa-check"></i>
+                                                                    </a>
+                                                                <?php else: ?>
+                                                                    <a href="admin_manage_posts.php?action=flag&id=<?= $post['id'] ?>"
+                                                                        class="btn btn-danger btn-sm" title="Flag Post"
+                                                                        onclick="return confirm('Are you sure you want to flag this post?');">
+                                                                        <i class="fas fa-flag"></i>
+                                                                    </a>
+                                                                <?php endif; ?>
 
                                                                 <!-- Delete -->
                                                                 <a href="admin_manage_posts.php?delete_id=<?= $post['id'] ?>"

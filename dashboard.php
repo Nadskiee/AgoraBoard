@@ -15,14 +15,57 @@ function sane($s)
 {
     return htmlspecialchars(trim($s), ENT_QUOTES, 'UTF-8');
 }
+function containsBadWords($text)
+{
+    // ⚠️ Customize this list as needed
+    $extremeWords = ['kill', 'murder', 'rape', 'terrorist', 'bomb', 'threat', 'abuse', 'hate'];
+    $badWords = ['fuck', 'shit', 'puta', 'pota', 'ulol', 'gago', 'nigga', 'bitch', 'asshole', 'puki', 'tite', 'motherfucker', 'slut', 'whore', 'damn', 'hell', 'crap', 'stupid', 'idiot', 'sucks', 'dumb'];
+
+    $textLower = strtolower($text);
+
+    foreach ($badWords as $word) {
+        if (strpos($textLower, $word) !== false) {
+            return true;
+        }
+    }
+    return false;
+}
+
 
 // 📝 Handle post creation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_post_content'])) {
     $content = sane($_POST['new_post_content']);
-    $categoryId = !empty($_POST['new_post_category']) ? (int)$_POST['new_post_category'] : null;
     $title = sane($_POST['new_post_title'] ?? '');
-    $stmt = $pdo->prepare("INSERT INTO community_posts (title, content, category_id, created_by, created_at) VALUES (?, ?, ?, ?, NOW()) ");
-    $stmt->execute([$title, $content, $categoryId, $userId]);
+    $categoryId = !empty($_POST['new_post_category']) ? (int)$_POST['new_post_category'] : null;
+
+    // 🚨 Auto-flag detection
+    $containsBadWords = containsBadWords($title . ' ' . $content);
+    $shouldFlag = $containsBadWords ? 1 : 0;
+
+    // If extreme words are found, prevent posting entirely
+    $extremeWords = ['kill', 'murder', 'rape', 'terrorist', 'bomb', 'threat', 'abuse', 'hate'];
+    foreach ($extremeWords as $word) {
+        if (stripos($title . ' ' . $content, $word) !== false) {
+            $_SESSION['post_error'] = "⚠️ Your post contains prohibited words and cannot be posted.";
+            header("Location: dashboard.php"); // redirect back
+            exit;
+        }
+    }
+
+    // Insert post
+    $stmt = $pdo->prepare("
+    INSERT INTO community_posts (title, content, category_id, created_by, is_flagged, created_at)
+    VALUES (?, ?, ?, ?, ?, NOW())
+");
+    $stmt->execute([$title, $content, $categoryId, $userId, $shouldFlag]);
+
+    if ($shouldFlag) {
+        $_SESSION['post_notice'] = "⚠️ Your post contains inappropriate words and has been auto-flagged.";
+    }
+
+    header("Location: dashboard.php");
+    exit;
+
     header("Location: dashboard.php");
     exit;
 }
@@ -39,16 +82,26 @@ if (
     $newTitle = sane($_POST['edit_post_title'] ?? '');
     $categoryId = !empty($_POST['edit_post_category']) ? (int)$_POST['edit_post_category'] : null;
 
+    $check = containsBadWords($newTitle . ' ' . $newContent);
+
+    if ($check === 'blocked') {
+        echo json_encode(['success' => false, 'message' => 'Your post contains prohibited content.']);
+        exit;
+    }
+
+    $shouldFlag = $check ? 1 : 0;
+
     $stmt = $pdo->prepare("
         UPDATE community_posts
-        SET title = ?, content = ?, category_id = ?
+        SET title = ?, content = ?, category_id = ?, is_flagged = ?, updated_at = NOW()
         WHERE id = ? AND created_by = ?
     ");
-    $stmt->execute([$newTitle, $newContent, $categoryId, $postId, $userId]);
+    $stmt->execute([$newTitle, $newContent, $categoryId, $shouldFlag, $postId, $userId]);
 
     echo json_encode([
         'success' => $stmt->rowCount() > 0,
-        'message' => $stmt->rowCount() > 0 ? 'Post updated' : 'Unauthorized or no changes'
+        'message' => $stmt->rowCount() > 0 ? 'Post updated' : 'Unauthorized or no changes',
+        'flagged' => $shouldFlag
     ]);
     exit;
 }
@@ -117,30 +170,59 @@ if (
     strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest'
 ) {
 
-    $commentId = (int)$_POST['comment_id'];
+    $commentId = (int)($_POST['comment_id'] ?? 0);
     $text = sane($_POST['comment_text']);
+    $shouldFlag = containsBadWords($text) ? 1 : 0;
 
-    $stmt = $pdo->prepare("UPDATE comments SET content=? WHERE id=? AND user_id=? AND deleted_at IS NULL");
-    $stmt->execute([$text, $commentId, $userId]);
+    $stmt = $pdo->prepare("
+    UPDATE comments
+    SET content = ?, is_flagged = ?, updated_at = NOW()
+    WHERE id = ? AND user_id = ?
+");
+    $stmt->execute([$text, $shouldFlag, $commentId, $userId]);
 
-    echo json_encode(['success' => true]);
+    echo json_encode([
+        'success' => $stmt->rowCount() > 0,
+        'message' => $stmt->rowCount() > 0 ? 'Comment updated' : 'Unauthorized or no changes',
+        'new_content' => $text,
+        'flagged' => $shouldFlag
+    ]);
     exit;
 }
 
-// 📅 Fetch unpinned posts
+// 📅 Fetch unpinned posts (excluding deleted or flagged)
 $stmtUnpinned = $pdo->query("
-    SELECT p.*, 
-           u.first_name, u.last_name, u.role,
-           c.name AS category_name,
-           (SELECT COUNT(*) FROM likes WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_likes,
-           (SELECT COUNT(*) FROM comments WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_comments,
-           (SELECT COUNT(*) FROM bookmarks WHERE post_type='community' AND post_id=p.id AND deleted_at IS NULL) AS total_bookmarks
+    SELECT 
+        p.*, 
+        u.first_name, 
+        u.last_name, 
+        u.role,
+        c.name AS category_name,
+        -- Counts
+        (SELECT COUNT(*) 
+         FROM likes 
+         WHERE post_type='community' 
+           AND post_id=p.id 
+           AND deleted_at IS NULL) AS total_likes,
+        (SELECT COUNT(*) 
+         FROM comments 
+         WHERE post_type='community' 
+           AND post_id=p.id 
+           AND deleted_at IS NULL) AS total_comments,
+        (SELECT COUNT(*) 
+         FROM bookmarks 
+         WHERE post_type='community' 
+           AND post_id=p.id 
+           AND deleted_at IS NULL) AS total_bookmarks
     FROM community_posts p
     LEFT JOIN users u ON p.created_by = u.id
     LEFT JOIN categories c ON p.category_id = c.id
-    WHERE p.is_pinned = 0 AND p.deleted_at IS NULL
+    WHERE p.is_pinned = 0 
+      AND p.deleted_at IS NULL
+      AND p.is_flagged = 0  -- exclude auto-flagged inappropriate posts
     ORDER BY p.created_at DESC
 ");
+
 
 $posts = $stmtUnpinned->fetchAll(PDO::FETCH_ASSOC);
 
@@ -282,6 +364,7 @@ try {
             <div class="modal-content">
                 <form id="reportForm" method="POST">
                     <input type="hidden" name="post_id" id="reportPostId">
+                    <input type="hidden" name="post_type" id="reportPostType" value="community">
                     <input type="hidden" name="category_id" id="reportCategoryId">
 
                     <div class="modal-header">
@@ -396,7 +479,25 @@ try {
                     <?php endforeach; ?>
                 </div>
 
+                <!-- Display post error/notice -->
+                <?php if (!empty($_SESSION['post_error'])): ?>
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <?= $_SESSION['post_error']; ?>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                    <?php unset($_SESSION['post_error']); ?>
+                <?php endif; ?>
 
+                <?php if (!empty($_SESSION['post_notice'])): ?>
+                    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                        <?= $_SESSION['post_notice']; ?>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                    <?php unset($_SESSION['post_notice']); ?>
+                <?php endif; ?>
+
+
+                <!-- Post Composer -->
                 <div class="composer mb-4">
                     <form method="POST">
                         <div class="d-flex gap-3">
@@ -605,6 +706,9 @@ try {
                                                             <div>
                                                                 <strong><?= sane($commentUser); ?></strong>
                                                                 <small class="text-muted"> • <?= sane($commentTime); ?></small>
+                                                                <?php if ($comment['is_flagged']): ?>
+                                                                    <span class="badge bg-warning text-dark ms-1 flag-badge">⚠️ Flagged</span>
+                                                                <?php endif; ?>
                                                             </div>
                                                             <?php if ($isCurrentUserComment): ?>
                                                                 <div class="dropdown">
@@ -1239,16 +1343,25 @@ try {
                         if (result.success) {
                             const commentCard = document.querySelector(`[data-comment-id="${commentId}"]`);
                             if (commentCard) {
-                                commentCard.querySelector('.comment-text').textContent = text;
+                                // Update comment text
+                                commentCard.querySelector('.comment-text').textContent = result.new_content;
 
-                                // ✅ Update the edit button's data-comment-text
+                                // Update edit button data
                                 const editButton = commentCard.querySelector('.btn-edit-comment');
-                                if (editButton) {
-                                    editButton.setAttribute('data-comment-text', text);
-                                }
+                                if (editButton) editButton.setAttribute('data-comment-text', result.new_content);
 
-                                // ✅ Hide the modal
-                                bootstrap.Modal.getInstance(editCommentModal).hide();
+                                // Show/hide flagged badge
+                                let flagBadge = commentCard.querySelector('.flag-badge');
+                                if (!flagBadge) {
+                                    flagBadge = document.createElement('span');
+                                    flagBadge.className = 'badge bg-warning text-dark ms-1 flag-badge';
+                                    flagBadge.textContent = '⚠️ Flagged';
+                                    commentCard.querySelector('strong').after(flagBadge);
+                                }
+                                flagBadge.style.display = result.flagged ? 'inline' : 'none';
+
+                                // Hide modal
+                                editCommentModalInstance.hide();
                             }
                         } else {
                             alert(result.message || 'Edit failed.');
@@ -1384,9 +1497,11 @@ try {
             reportModal.addEventListener('show.bs.modal', function(event) {
                 const trigger = event.relatedTarget;
                 const postId = trigger.getAttribute('data-post-id');
+                const postType = btn.getAttribute('data-post-type') || 'community';
                 const categoryId = trigger.getAttribute('data-category-id');
 
                 document.getElementById('reportPostId').value = postId;
+                document.getElementById('reportPostType').value = postType;
                 document.getElementById('reportCategoryId').value = categoryId;
             });
 
