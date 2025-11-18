@@ -207,7 +207,7 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                     <li><a class="dropdown-item text-white" href="admin_manage_posts.php">Posts</a></li>
                     <li><a class="dropdown-item text-white" href="admin_manage_safety.php">Safety Reports</a></li>
                     <li><a class="dropdown-item text-white" href="admin_manage_jobs.php">Jobs</a></li>
-                    <li><a class="dropdown-item text-white" href="admin_manage_volunteering.php">Volunteering</a></li>
+                    <!-- <li><a class="dropdown-item text-white" href="admin_manage_volunteering.php">Volunteering</a></li> -->
                 </ul>
             </li>
             <li>

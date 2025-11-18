@@ -154,7 +154,6 @@ try {
     footer {
       flex-shrink: 0;
       padding: 1rem 0;
-
       text-align: center;
     }
   </style>
