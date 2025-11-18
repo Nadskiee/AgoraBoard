@@ -1,94 +1,75 @@
 <?php
 session_start();
+require_once 'db_connect.php'; // Make sure this initializes $pdo
 
-// Initialize default settings if not set
-if (!isset($_SESSION['settings'])) {
-    $_SESSION['settings'] = [
-        'username' => 'User',
-        'email' => 'user@example.com',
-        'password' => password_hash('password123', PASSWORD_DEFAULT), // Default password
-        'notifications' => true,
-        'newsletter' => false,
-        'theme' => 'light',
-        'language' => 'en',
-        'timezone' => 'UTC'
-    ];
+// Ensure user is logged in
+if (!isset($_SESSION['currentUser'])) {
+    header("Location: login.php");
+    exit();
 }
 
-$settings = $_SESSION['settings']; // Get settings *before* any POST processing
-$success_message = null;
-$error_message = null; // Variable for error messages
+$userId = $_SESSION['currentUser']['id'];
+$message = '';
+$alertClass = 'info';
 
-// Handle form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    
-    // --- Combined & Fixed Save Logic ---
-    
-    $new_password = $_POST['new_password'] ?? '';
-    $current_password_input = $_POST['current_password'] ?? '';
-    $confirm_password = $_POST['confirm_password'] ?? '';
+// Fetch current user info
+$stmt = $pdo->prepare("SELECT username, email, password_hash FROM users WHERE id = ?");
+$stmt->execute([$userId]);
+$user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    // 1. Update general (non-password) settings first
-    $_SESSION['settings']['username'] = $_POST['username'] ?? $settings['username'];
-    $_SESSION['settings']['email'] = $_POST['email'] ?? $settings['email'];
-    $_SESSION['settings']['notifications'] = isset($_POST['notifications']);
-    $_SESSION['settings']['newsletter'] = isset($_POST['newsletter']);
-    $_SESSION['settings']['theme'] = $_POST['theme'] ?? $settings['theme'];
-    $_SESSION['settings']['language'] = $_POST['language'] ?? $settings['language'];
-    $_SESSION['settings']['timezone'] = $_POST['timezone'] ?? $settings['timezone'];
+// Handle Account Info Update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account'])) {
+    $username = trim($_POST['username']);
+    $email = trim($_POST['email']);
 
-    $password_updated_successfully = false;
-    $general_settings_saved = true; // Assume success unless password fails
-
-    // 2. Check if user is trying to update password (i.e., any password field is filled)
-    if (!empty($new_password) || !empty($current_password_input) || !empty($confirm_password)) {
-        
-        // 2a. Check if current password matches
-        if (password_verify($current_password_input, $settings['password'])) {
-            // 2b. Check if new passwords are not empty and match
-            if (!empty($new_password) && $new_password === $confirm_password) {
-                // 2c. Hash and update password in session
-                $_SESSION['settings']['password'] = password_hash($new_password, PASSWORD_DEFAULT);
-                $password_updated_successfully = true;
-            } elseif (empty($new_password)) {
-                $error_message = "New password cannot be empty.";
-                $general_settings_saved = false; // Error occurred
-            } else {
-                $error_message = "New passwords do not match. Please try again.";
-                $general_settings_saved = false; // Error occurred
-            }
-        } else {
-            $error_message = "Incorrect current password. Password was not updated.";
-            $general_settings_saved = false; // Error occurred
-        }
+    if (strlen($username) < 3 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $message = "Please enter a valid username and email.";
+        $alertClass = "danger";
+    } else {
+        $stmt = $pdo->prepare("UPDATE users SET username = ?, email = ? WHERE id = ?");
+        $stmt->execute([$username, $email, $userId]);
+        $message = "Account information updated successfully!";
+        $alertClass = "success";
+        $user['username'] = $username;
+        $user['email'] = $email;
     }
-    
-    // 3. Set final success/error message
-    if ($general_settings_saved) {
-        if ($password_updated_successfully) {
-            $success_message = "Settings and password saved successfully!";
-        } else {
-            $success_message = "Settings saved successfully!";
-        }
-    }
-    
-    // 4. Re-fetch all settings from session to display the updated values
-    $settings = $_SESSION['settings'];
 }
 
+// Handle Password Change
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
+    $current = $_POST['current_password'] ?? '';
+    $new = $_POST['new_password'] ?? '';
+    $confirm = $_POST['confirm_password'] ?? '';
+
+    if (!$current || !$new || !$confirm) {
+        $message = 'All password fields are required.';
+        $alertClass = 'danger';
+    } elseif ($new !== $confirm) {
+        $message = 'New passwords do not match.';
+        $alertClass = 'danger';
+    } elseif (!password_verify($current, $user['password_hash'])) {
+        $message = 'Current password is incorrect.';
+        $alertClass = 'danger';
+    } else {
+        $newHash = password_hash($new, PASSWORD_DEFAULT);
+        $stmt = $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
+        $stmt->execute([$newHash, $userId]);
+        $message = 'Password updated successfully.';
+        $alertClass = 'success';
+    }
+}
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Settings - AgoraBoard</title>
-
     <link rel="stylesheet" href="assets/dashboard.css?v=<?php echo time(); ?>">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
-    
     <style>
         :root {
             --sage: #10b981;
@@ -109,6 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font-weight: 700;
             color: var(--sage-dark);
         }
+
         .page-header p {
             color: var(--muted-text);
             font-size: 1.1rem;
@@ -118,41 +100,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background: var(--cream);
             border: 1px solid var(--border-color);
             border-radius: 12px;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
             padding: 1.5rem 2rem;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            margin-bottom: 20px;
         }
-        .settings-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.07);
+
+        /* Add this to your <style> section */
+        .settings-card .d-flex.gap-2 {
+            margin-top: 1.5rem;
+            /* adds space between the last input and the button */
         }
+
 
         .section-title {
             font-size: 1.4em;
             font-weight: 600;
             color: var(--sage-dark);
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 20px;
             display: flex;
             align-items: center;
-        }
-        .section-title i {
-            color: var(--sage);
-            font-size: 1.1em;
-            margin-right: 12px;
-            padding-bottom: 2px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
         }
 
-        .form-group {
-            margin-bottom: 1.25rem;
+        .section-title i {
+            color: var(--sage);
+            margin-right: 10px;
         }
+
         label {
             display: block;
             margin-bottom: 0.5rem;
             color: var(--dark-text);
             font-weight: 500;
         }
+
         input[type="text"],
         input[type="email"],
         input[type="password"],
@@ -161,62 +142,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             padding: 0.75rem;
             border: 1px solid var(--border-color);
             border-radius: 8px;
-            font-size: 1em;
             background: var(--bg);
             color: var(--dark-text);
-            transition: all 0.3s ease;
         }
-        input[type="text"]:focus,
-        input[type="email"]:focus,
-        input[type="password"]:focus,
+
+        input:focus,
         select:focus {
             outline: none;
             border-color: var(--sage);
             box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
         }
 
-        /* Bootstrap Switch Styling */
         .form-check-label {
             color: var(--dark-text);
-            padding-top: 2px;
         }
+
         .form-check-input:checked {
             background-color: var(--sage);
             border-color: var(--sage-dark);
         }
-        .form-check-input:focus {
-            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
-            border-color: var(--sage-dark);
-        }
 
-        /* Button Styling */
-        .button-group {
-            display: flex;
-            gap: 15px;
-        }
-        .btn-save, .btn-reset {
-            padding: 10px 25px;
-            border: none;
-            border-radius: 8px;
-            font-size: 1em;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
         .btn-save {
             background: linear-gradient(135deg, var(--sage), var(--sage-dark));
             color: white;
+            border-radius: 8px;
+            font-weight: 600;
+            padding: 10px 25px;
         }
+
         .btn-save:hover {
             background: linear-gradient(135deg, var(--sage-light), var(--sage-dark));
-            transform: translateY(-2px);
         }
+
         .btn-reset {
             background: var(--border-color);
             color: var(--dark-text);
-        }
-        .btn-reset:hover {
-            background: #dcdad4;
+            border-radius: 8px;
+            padding: 10px 25px;
         }
 
         .success-message {
@@ -224,17 +186,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: #166534;
             padding: 15px;
             border-radius: 8px;
-            margin-bottom: 25px;
+            margin-bottom: 20px;
             border: 1px solid #bbf7d0;
         }
-        
-        /* Added Error Message Style */
+
         .error-message {
             background: #fef2f2;
             color: #991b1b;
             padding: 15px;
             border-radius: 8px;
-            margin-bottom: 25px;
+            margin-bottom: 20px;
             border: 1px solid #fecaca;
         }
     </style>
@@ -242,199 +203,140 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <body>
     <div class="dashboard-layout d-flex">
-
         <?php include 'user_sidebar.php'; ?>
-
         <div class="main-content flex-grow-1 p-4">
             <div class="page-header mb-4">
                 <h1>⚙️ Settings</h1>
                 <p>Manage your account preferences</p>
             </div>
 
-            <?php if (isset($success_message)): ?>
-                <div class="success-message" id="successMessage">
-                    ✓ <?php echo $success_message; ?>
-                </div>
-            <?php endif; ?>
-            
-            <?php if (isset($error_message)): ?>
-                <div class="error-message" id="errorMessage">
-                    ✗ <?php echo $error_message; ?>
-                </div>
+            <?php if ($message): ?>
+                <div class="alert alert-<?= $alertClass ?>"><?= htmlspecialchars($message) ?></div>
             <?php endif; ?>
 
-            <div class="row d-flex justify-content-center">
+            <div class="row justify-content-center">
                 <div class="col-lg-10">
-                    <form method="POST" id="settingsForm">
 
-                        <div class="settings-card mb-4">
-                            <h2 class="section-title"><i class="bi bi-person-circle"></i>Account Information</h2>
-                            <div class="form-group">
-                                <label for="username">Username</label>
-                                <input type="text" id="username" name="username" 
-                                       value="<?php echo htmlspecialchars($settings['username']); ?>" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="email">Email Address</label>
-                                <input type="email" id="email" name="email" 
-                                       value="<?php echo htmlspecialchars($settings['email']); ?>" required>
-                            </div>
-                        </div>
-                        
-                        <div class="settings-card mb-4">
-                            <h2 class="section-title"><i class="bi bi-shield-lock-fill"></i>Change Password</h2>
-                            <div class="form-group">
-                                <label for="current_password">Current Password</label>
-                                <input type="password" id="current_password" name="current_password" 
-                                       placeholder="Enter your current password">
-                            </div>
-                            <div class="form-group">
-                                <label for="new_password">New Password</label>
-                                <input type="password" id="new_password" name="new_password" 
-                                       placeholder="Enter a new password">
-                            </div>
-                            <div class="form-group">
-                                <label for="confirm_password">Confirm New Password</label>
-                                <input type="password" id="confirm_password" name="confirm_password" 
-                                       placeholder="Confirm your new password">
+                    <!-- ACCOUNT INFO FORM -->
+                    <form method="POST">
+                        <input type="hidden" name="update_account" value="1">
+                        <div class="settings-card">
+                            <h3 class="section-title"><i class="bi bi-person-circle"></i>Account Information</h3>
+                            <label for="username">Username</label>
+                            <input type="text" id="username" name="username" value="<?= htmlspecialchars($user['username']) ?>" required>
+                            <label for="email">Email</label>
+                            <input type="email" id="email" name="email" value="<?= htmlspecialchars($user['email']) ?>" required>
+                            <div class="d-flex gap-2 justify-content-end">
+                                <button class="btn-save" type="submit">Save Account</button>
                             </div>
                         </div>
+                    </form>
 
-                        <div class="settings-card mb-4">
-                            <h2 class="section-title"><i class="bi bi-sliders"></i>Preferences</h2>
-                            <div class="form-group">
-                                <label for="theme">Theme</label>
-                                <select id="theme" name="theme">
-                                    <option value="light" <?php echo $settings['theme'] === 'light' ? 'selected' : ''; ?>>Light</option>
-                                    <option value="dark" <?php echo $settings['theme'] === 'dark' ? 'selected' : ''; ?>>Dark</option>
-                                    <option value="auto" <?php echo $settings['theme'] === 'auto' ? 'selected' : ''; ?>>Auto</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="language">Language</label>
-                                <select id="language" name="language">
-                                    <option value="en" <?php echo $settings['language'] === 'en' ? 'selected' : ''; ?>>English</option>
-                                    <option value="es" <?php echo $settings['language'] === 'es' ? 'selected' : ''; ?>>Español</option>
-                                    <option value="fr" <?php echo $settings['language'] === 'fr' ? 'selected' : ''; ?>>Français</option>
-                                    <option value="de" <?php echo $settings['language'] === 'de' ? 'selected' : ''; ?>>Deutsch</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="timezone">Timezone</label>
-                                <select id="timezone" name="timezone">
-                                    <option value="UTC" <?php echo $settings['timezone'] === 'UTC' ? 'selected' : ''; ?>>UTC</option>
-                                    <option value="America/New_York" <?php echo $settings['timezone'] === 'America/New_York' ? 'selected' : ''; ?>>Eastern Time</option>
-                                    <option value="America/Chicago" <?php echo $settings['timezone'] === 'America/Chicago' ? 'selected' : ''; ?>>Central Time</option>
-                                    <option value="America/Los_Angeles" <?php echo $settings['timezone'] === 'America/Los_Angeles' ? 'selected' : ''; ?>>Pacific Time</option>
-                                    <option value="Europe/London" <?php echo $settings['timezone'] === 'Europe/London' ? 'selected' : ''; ?>>London</option>
-                                    <option value="Asia/Manila" <?php echo $settings['timezone'] === 'Asia/Manila' ? 'selected' : ''; ?>>Manila</option>
-                                </select>
+                    <!-- CHANGE PASSWORD FORM -->
+                    <form method="POST">
+                        <input type="hidden" name="change_password" value="1">
+                        <div class="settings-card">
+                            <h3 class="section-title"><i class="bi bi-shield-lock-fill"></i>Change Password</h3>
+                            <label for="current_password">Current Password</label>
+                            <input type="password" id="current_password" name="current_password" required>
+                            <label for="new_password">New Password</label>
+                            <input type="password" id="new_password" name="new_password" required>
+                            <label for="confirm_password">Confirm New Password</label>
+                            <input type="password" id="confirm_password" name="confirm_password" required>
+                            <div class="d-flex gap-2 justify-content-end">
+                                <button class="btn-save" type="submit">Change Password</button>
                             </div>
                         </div>
-
-                        <div class="settings-card mb-4">
-                            <h2 class="section-title"><i class="bi bi-bell-fill"></i>Notifications</h2>
-                            <div class="form-check form-switch fs-5 mb-3">
-                                <input class="form-check-input" type="checkbox" role="switch" id="notifications" name="notifications" 
-                                       <?php echo $settings['notifications'] ? 'checked' : ''; ?>>
-                                <label class="form-check-label" for="notifications">Enable notifications</label>
-                            </div>
-                            <div class="form-check form-switch fs-5">
-                                <input class="form-check-input" type="checkbox" role="switch" id="newsletter" name="newsletter"
-                                       <?php echo $settings['newsletter'] ? 'checked' : ''; ?>>
-                                <label class="form-check-label" for="newsletter">Subscribe to newsletter</labe>
-                            </div>
-                        </div>
-
-                        <div class="d-flex justify-content-end mb-4 button-group">
-                            <button type="reset" class="btn-reset">Reset</button>
-                            <button type="submit" class="btn-save">Save Changes</button>
-                        </div>
-                        
                     </form>
                 </div>
             </div>
         </div>
     </div>
-    
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    
     <script>
-        function confirmLogout() {
-            if (confirm("Are you sure you want to logout?")) {
-                document.getElementById("logoutForm").submit();
-            }
-        }
-
         // --- Auto-hide alerts ---
-        const successMessage = document.getElementById('successMessage');
+        const successMessage = document.querySelector('.success-message');
         if (successMessage) {
             setTimeout(() => {
                 successMessage.style.transition = 'opacity 0.5s ease';
                 successMessage.style.opacity = '0';
-                setTimeout(() => {
-                    successMessage.remove();
-                }, 500);
-            }, 3000); // 3 seconds
+                setTimeout(() => successMessage.remove(), 500);
+            }, 3000);
         }
-        
-        const errorMessage = document.getElementById('errorMessage');
+
+        const errorMessage = document.querySelector('.error-message');
         if (errorMessage) {
             setTimeout(() => {
                 errorMessage.style.transition = 'opacity 0.5s ease';
                 errorMessage.style.opacity = '0';
-                setTimeout(() => {
-                    errorMessage.remove();
-                }, 500);
-            }, 5000); // 5 seconds for errors
+                setTimeout(() => errorMessage.remove(), 500);
+            }, 5000);
         }
 
-        // --- Combined Form Validation ---
-        const form = document.getElementById('settingsForm');
-        form.addEventListener('submit', function(e) {
+        // --- ACCOUNT INFO FORM VALIDATION ---
+        const accountForm = document.querySelector('form input[name="action"][value="update_account"]').closest('form');
+        accountForm.addEventListener('submit', function(e) {
             const username = document.getElementById('username').value.trim();
             const email = document.getElementById('email').value.trim();
-            const newPassword = document.getElementById('new_password').value;
-            const confirmPassword = document.getElementById('confirm_password').value;
-            const currentPassword = document.getElementById('current_password').value;
 
-            // 1. Username validation (from old file)
             if (username.length < 3) {
                 e.preventDefault();
-                alert('Username must be at least 3 characters long');
+                alert('Username must be at least 3 characters long.');
                 return false;
             }
 
-            // 2. Email validation (from old file)
             if (!email.includes('@') || email.length < 5) {
                 e.preventDefault();
-                alert('Please enter a valid email address');
+                alert('Please enter a valid email address.');
                 return false;
             }
-            
-            // 3. Password validation (from new file, improved)
-            // Only validate if user is trying to change password
-            if (newPassword.length > 0 || confirmPassword.length > 0 || currentPassword.length > 0) {
-                
-                if (currentPassword.length === 0) {
-                     e.preventDefault();
-                     alert('Please enter your current password to set a new one.');
-                     return false;
-                }
-                
-                if (newPassword.length === 0) {
-                     e.preventDefault();
-                     alert('New password cannot be empty.');
-                     return false;
-                }
+        });
 
-                if (newPassword !== confirmPassword) {
-                    e.preventDefault();
-                    alert('New passwords do not match. Please try again.');
-                    return false;
-                }
+        // --- PREFERENCES FORM VALIDATION ---
+        const preferencesForm = document.querySelector('form input[name="action"][value="update_preferences"]').closest('form');
+        preferencesForm.addEventListener('submit', function(e) {
+            const timezone = document.getElementById('timezone').value;
+            if (!timezone) {
+                e.preventDefault();
+                alert('Please select a valid timezone.');
+                return false;
+            }
+        });
+
+        // --- CHANGE PASSWORD FORM VALIDATION ---
+        const passwordForm = document.querySelector('form input[name="action"][value="change_password"]').closest('form');
+        passwordForm.addEventListener('submit', function(e) {
+            const currentPassword = document.getElementById('current_password').value.trim();
+            const newPassword = document.getElementById('new_password').value.trim();
+            const confirmPassword = document.getElementById('confirm_password').value.trim();
+            const tempToken = document.querySelector('input[name="temp_token"]').value.trim();
+
+            if (newPassword.length === 0) {
+                e.preventDefault();
+                alert('New password cannot be empty.');
+                return false;
+            }
+
+            if (newPassword !== confirmPassword) {
+                e.preventDefault();
+                alert('New passwords do not match.');
+                return false;
+            }
+
+            if (currentPassword.length === 0 && tempToken.length === 0) {
+                e.preventDefault();
+                alert('Enter your current password or use a temporary token.');
+                return false;
+            }
+
+            if (newPassword.length < 6) {
+                e.preventDefault();
+                alert('New password must be at least 6 characters long.');
+                return false;
             }
         });
     </script>
+
 </body>
+
 </html>

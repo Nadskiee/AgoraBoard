@@ -17,7 +17,7 @@ function sane($s)
     return htmlspecialchars(trim($s ?? ''), ENT_QUOTES, 'UTF-8');
 }
 
-// 📚 Fetch bookmarked posts
+// Fetch bookmarked posts
 try {
     $stmt = $pdo->prepare("
         SELECT 
@@ -29,7 +29,9 @@ try {
             u.first_name,
             u.last_name,
             (SELECT COUNT(*) FROM likes l WHERE l.post_id = p.id) AS total_likes,
-            (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) AS total_comments
+            (SELECT COUNT(*) FROM comments c 
+                WHERE c.post_id = p.id AND c.post_type = 'community' AND c.deleted_at IS NULL
+            ) AS total_comments
         FROM bookmarks b
         JOIN community_posts p ON b.post_id = p.id
         LEFT JOIN users u ON p.created_by = u.id

@@ -6,42 +6,47 @@ include 'navbar.php';
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $category_id = isset($_GET['category']) ? intval($_GET['category']) : 0;
 
-// Fetch categories for dropdown
-$categoryQuery = $pdo->query("SELECT id, name FROM categories ORDER BY name ASC");
+// Fetch categories for dropdown (exclude soft-deleted)
+$categoryQuery = $pdo->query("SELECT id, name 
+                              FROM categories 
+                              WHERE deleted_at IS NULL 
+                              ORDER BY name ASC");
 $categories = $categoryQuery->fetchAll(PDO::FETCH_ASSOC);
 
-// Base query - FIXED
-$query = "SELECT p.title, p.content, c.name AS category_name, p.is_pinned 
+// Base query - only show non-deleted, non-flagged posts
+$query = "SELECT p.id, p.title, p.content, p.category, c.name AS category_name, p.is_pinned
           FROM community_posts p
           LEFT JOIN categories c ON p.category_id = c.id
-          WHERE p.deleted_at IS NULL";
+          WHERE p.deleted_at IS NULL AND p.is_flagged = 0";
 $params = [];
 
-// Add search - FIXED (aliased table)
+// Add search filter
 if (!empty($search)) {
-    $query .= " AND (p.title LIKE ? OR p.content LIKE ?)";
+    $query .= " AND (MATCH(p.title, p.content) AGAINST(?) OR p.title LIKE ? OR p.content LIKE ?)";
     $searchTerm = "%$search%";
+    $params[] = $search;
     $params[] = $searchTerm;
     $params[] = $searchTerm;
 }
 
-// Category filter by ID
+// Add category filter
 if ($category_id > 0) {
     $query .= " AND p.category_id = ?";
     $params[] = $category_id;
 }
 
-// Order pinned first - FIXED (aliased table)
+// Order pinned posts first, then newest
 $query .= " ORDER BY p.is_pinned DESC, p.created_at DESC LIMIT 10";
 
+// Execute
 $stmt = $pdo->prepare($query);
 $stmt->execute($params);
 $recentPosts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch events
+// Fetch events (unchanged)
 $recentEvents = $pdo->query("SELECT title, description, event_date FROM events ORDER BY created_at DESC LIMIT 3")->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch latest polls with options and vote counts
+// Fetch polls (unchanged)
 $pollQuery = "
     SELECT p.id AS poll_id, p.question, po.id AS option_id, po.option_text,
         (SELECT COUNT(*) FROM poll_votes pv WHERE pv.option_id = po.id) AS votes
@@ -69,6 +74,7 @@ foreach ($recentPolls as $row) {
     ];
 }
 ?>
+
 
 <!DOCTYPE html>
 <html lang="en">

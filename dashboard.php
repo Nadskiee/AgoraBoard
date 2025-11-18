@@ -963,45 +963,71 @@ try {
             const unreadCount = document.getElementById('unreadCount');
             const notificationList = document.getElementById('notificationList');
 
+            // ✅ Mark notifications as read when dropdown opens
+            bellButton.addEventListener('show.bs.dropdown', () => {
+                fetch('mark_notification.php')
+                    .then(res => res.json())
+                    .then(result => {
+                        if (result.success) {
+                            unreadCount.textContent = '0';
+                            badge.classList.add('d-none');
+                            document.querySelectorAll('#notificationList a.unread').forEach(el => el.classList.remove('unread'));
+                        }
+                    });
+            });
+
             function loadNotifications() {
                 fetch('fetch_notifications.php')
                     .then(res => res.json())
                     .then(data => {
-                        console.log('🔔 Fetched notifications:', data); // ✅ Log the response array
+                        console.log('🔔 Fetched notifications:', data);
                         const notificationList = document.getElementById('notificationList');
-                        console.log('🔔 Injecting into:', notificationList); // ✅ Confirm the target container
+                        notificationList.innerHTML = ''; // Clear previous notifications
 
                         if (Array.isArray(data) && data.length > 0) {
+                            let unreadCountNum = 0;
+
                             data.forEach(n => {
                                 const item = document.createElement('li');
                                 item.className = 'notification-item d-flex justify-content-between align-items-start p-3 border-bottom';
-                                item.dataset.id = n.id; // ✅ This sets the notification ID
+                                item.dataset.id = n.id;
+
+                                const isUnread = n.is_read == 0;
+                                if (isUnread) unreadCountNum++;
 
                                 item.innerHTML = `
-        <a class="dropdown-item unread d-flex gap-2 p-0 flex-grow-1" href="#">
-            <div class="avatar bg-${n.avatar_color} text-white fw-bold">${n.initials}</div>
-            <div>
-                <p class="mb-1"><strong>${n.sender_name}</strong> ${n.message}</p>
-                <small class="text-muted">${n.created_at}</small>
-            </div>
-        </a>
-        <button class="btn btn-sm btn-link text-danger delete-notifications" title="Remove">
-            <i class="bi bi-x-circle"></i>
-        </button>
-    `;
+                        <a class="dropdown-item ${isUnread ? 'unread' : ''} d-flex gap-2 p-0 flex-grow-1" href="#">
+                            <div class="avatar bg-${n.avatar_color} text-white fw-bold">${n.initials}</div>
+                            <div>
+                                <p class="mb-1"><strong>${n.sender_name}</strong> ${n.message}</p>
+                                <small class="text-muted">${n.created_at}</small>
+                            </div>
+                        </a>
+                        <button class="btn btn-sm btn-link text-danger delete-notifications" title="Remove">
+                            <i class="bi bi-x-circle"></i>
+                        </button>
+                    `;
 
                                 notificationList.appendChild(item);
                             });
 
-                            // Show badge and update count
-                            badge.classList.remove('d-none');
-                            unreadCount.textContent = data.length;
+                            // Update badge based on actual unread notifications
+                            if (unreadCountNum > 0) {
+                                badge.classList.remove('d-none');
+                                unreadCount.textContent = unreadCountNum;
+                            } else {
+                                badge.classList.add('d-none');
+                                unreadCount.textContent = '0';
+                            }
                         } else {
                             notificationList.innerHTML = '<li class="p-3 text-muted">No notifications</li>';
                             badge.classList.add('d-none');
+                            unreadCount.textContent = '0';
                         }
-                    });
+                    })
+                    .catch(err => console.error('Failed to load notifications:', err));
             }
+
 
 
             // 🗑️ Delete Notification
