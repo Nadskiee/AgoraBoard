@@ -51,6 +51,66 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
         text-align: center;
     }
 
+    .sidebar .dropdown-toggle {
+        color: #dcdcdc;
+        padding: 8px 15px;
+        border-radius: 4px;
+        margin: 2px 10px;
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        width: calc(100% - 20px);
+        /* account for margin */
+        text-decoration: none;
+        background: none;
+        border: none;
+        cursor: pointer;
+    }
+
+    .sidebar .nav-link i,
+    .sidebar .dropdown-toggle i {
+        width: 20px;
+        text-align: center;
+    }
+
+    .sidebar .nav-link:hover,
+    .sidebar .nav-link.active,
+    .sidebar .dropdown-toggle:hover,
+    .sidebar .dropdown-toggle.active {
+        background-color: #0a615a;
+        color: #fff;
+    }
+
+    /* Dropdown menu */
+    .sidebar .dropdown-menu {
+        background-color: #0b5345;
+        /* slightly darker than sidebar */
+        border: none;
+        padding: 0;
+        margin: 0;
+        width: 100%;
+    }
+
+    /* Dropdown items */
+    .sidebar .dropdown-item {
+        padding: 8px 15px;
+        color: #dcdcdc;
+        font-size: 0.9rem;
+        border-radius: 0;
+        /* match sidebar links */
+        width: 100%;
+        display: flex;
+        align-items: center;
+        text-decoration: none;
+    }
+
+    /* Dropdown hover matches sidebar hover */
+    .sidebar .dropdown-item:hover,
+    .sidebar .dropdown-item:active {
+        background-color: #0a615a;
+        color: #fff;
+    }
+
     .sidebar hr {
         border-color: rgba(255, 255, 255, 0.2);
     }
@@ -123,10 +183,32 @@ $adminName = $_SESSION['currentUser']['name'] ?? "Admin";
                     <i class="fas fa-chart-line me-2"></i> Dashboard
                 </a>
             </li>
-            <li>
-                <a href="admin_manage_posts.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'admin_manage_posts.php' ? 'active' : ''; ?>">
-                    <i class="fas fa-bullhorn me-2"></i> Posts
+            <li class="nav-item dropdown">
+                <!-- Dropdown toggle -->
+                <a href="#"
+                    class="nav-link dropdown-toggle <?= in_array(basename($_SERVER['PHP_SELF']), ['admin_manage_posts.php', 'admin_manage_safety.php', 'admin_manage_jobs.php', 'admin_manage_volunteering.php']) ? 'active' : ''; ?>"
+                    id="postsDropdown"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false">
+                    <i class="fas fa-bullhorn me-2"></i>
+                    <span id="postsDropdownLabel">
+                        <?php
+                        $file = basename($_SERVER['PHP_SELF']);
+                        if ($file == 'admin_manage_safety.php') echo 'Safety Reports';
+                        elseif ($file == 'admin_manage_jobs.php') echo 'Jobs';
+                        elseif ($file == 'admin_manage_volunteering.php') echo 'Volunteering';
+                        else echo 'Posts';
+                        ?>
+                    </span>
                 </a>
+
+                <!-- Dropdown menu -->
+                <ul class="dropdown-menu bg-teal border-0" aria-labelledby="postsDropdown">
+                    <li><a class="dropdown-item text-white" href="admin_manage_posts.php">Posts</a></li>
+                    <li><a class="dropdown-item text-white" href="admin_manage_safety.php">Safety Reports</a></li>
+                    <li><a class="dropdown-item text-white" href="admin_manage_jobs.php">Jobs</a></li>
+                    <li><a class="dropdown-item text-white" href="admin_manage_volunteering.php">Volunteering</a></li>
+                </ul>
             </li>
             <li>
                 <a href="admin_manage_categories.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'admin_manage_categories.php' ? 'active' : ''; ?>">

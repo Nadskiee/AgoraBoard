@@ -1,58 +1,42 @@
 <?php
-// --- 1. INCLUDE DATABASE CONNECTION ---
-// This line brings in the $pdo variable (PDO connection object) from db.php
-require_once 'db_connect.php'; 
+require_once 'db_connect.php';
 
-// --- 2. FETCH JOB DATA ---
+// --- 2. FETCH JOB DATA FROM DB ---
 $jobs = [];
-
-// --- DUMMY DATA FOR TESTING (OPTIONAL: KEEP THIS WHILE YOU TEST) ---
-$dummy_jobs = [
-    [
-        'id' => 99999, 
-        'title' => 'Senior Frontend Developer',
-        'description' => 'We\'re seeking an experienced Frontend Developer to join our team. You\'ll be responsible for designing and maintaining web applications, collaborating with designers and backend engineers, and implementing best practices. Requirements include 5+ years of React experience, strong TypeScript skills, and familiarity with modern frontend tooling.',
-        'employer' => 'TechVision Solutions',
-        'contact_info' => 'careers@techvision.com, +63 912 345 6789',
-        'posted_by' => 'HR Manager',
-        'created_at' => date('Y-m-d H:i:s', strtotime('-1 day')), 
-    ],
-    [
-        'id' => 99998, 
-        'title' => 'UX/UI Designer',
-        'description' => 'Create beautiful and intuitive user interfaces for web and mobile applications. Collaborate with product teams to define and implement innovative solutions for the product direction, visuals, and experience.',
-        'employer' => 'Creative Digital Agency',
-        'contact_info' => 'hello@creativedigital.com, +63 917 234 5678',
-        'posted_by' => 'Design Lead',
-        'created_at' => date('Y-m-d H:i:s', strtotime('-2 days')), 
-    ],
-];
-
-// --- 3. FETCH REAL JOB DATA (Original Logic) ---
-$sql = "SELECT id, title, description, employer, contact_info, posted_by, created_at FROM jobs ORDER BY created_at DESC";
+$searchQuery = '';
+if (isset($_GET['search'])) {
+    $searchQuery = trim($_GET['search']);
+}
 
 try {
-    $stmt = $pdo->query($sql);
-
-    if ($stmt) {
-        $real_jobs = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $jobs = array_merge($real_jobs, $dummy_jobs); 
-        
-        usort($jobs, function($a, $b) {
-            return strtotime($b['created_at']) - strtotime($a['created_at']);
-        });
+    if ($searchQuery !== '') {
+        // Filter jobs by title, employer, or description
+        $stmt = $pdo->prepare("SELECT id, title, description, employer, contact_info, posted_by, created_at 
+                               FROM jobs 
+                               WHERE deleted_at IS NULL 
+                               AND (title LIKE :search OR employer LIKE :search OR description LIKE :search)
+                               ORDER BY created_at DESC");
+        $stmt->execute(['search' => "%$searchQuery%"]);
+    } else {
+        $stmt = $pdo->query("SELECT id, title, description, employer, contact_info, posted_by, created_at 
+                             FROM jobs 
+                             WHERE deleted_at IS NULL 
+                             ORDER BY created_at DESC");
     }
+    $jobs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    $jobs = $dummy_jobs;
+    $jobs = [];
 }
 
 $jobCount = count($jobs);
 
-// Close the connection
-$pdo = null; 
+// Close connection
+$pdo = null;
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -79,7 +63,8 @@ $pdo = null;
         }
 
         .main-container {
-            max-width: 1140px; /* UPDATED FROM 900px */
+            max-width: 1140px;
+            /* UPDATED FROM 900px */
             margin: auto;
         }
 
@@ -94,8 +79,9 @@ $pdo = null;
             font-size: 0.95rem;
             font-weight: 500;
             transition: all 0.3s ease;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
         }
+
         .back-btn-top:hover {
             background: linear-gradient(135deg, var(--sage-light), var(--sage-dark));
             color: #fff;
@@ -108,6 +94,7 @@ $pdo = null;
             font-weight: 700;
             color: var(--sage-dark);
         }
+
         .page-header p {
             color: var(--muted-text);
         }
@@ -116,34 +103,37 @@ $pdo = null;
         .search-icon {
             color: var(--sage);
         }
-        
+
         .job-card {
             border: 1px solid var(--border-color);
             border-radius: 0.5rem;
-            background-color: var(--cream); /* UPDATED */
+            background-color: var(--cream);
+            /* UPDATED */
             transition: box-shadow 0.2s ease-in-out, transform 0.2s ease-in-out;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05); 
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
         }
 
         .job-card:hover {
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            transform: translateY(-3px); /* Added subtle lift */
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            transform: translateY(-3px);
+            /* Added subtle lift */
         }
-        
+
         .job-card h4 {
             color: var(--dark-text);
         }
 
-        .job-meta span, .text-muted {
+        .job-meta span,
+        .text-muted {
             color: var(--muted-text) !important;
-            font-size: 0.875rem; 
+            font-size: 0.875rem;
         }
 
         .job-meta i {
-            color: #6c757d; 
+            color: #6c757d;
             font-size: 0.8rem;
         }
-        
+
         /* NEW: Button Style */
         .btn-gradient {
             background: linear-gradient(135deg, var(--sage), var(--sage-dark));
@@ -152,7 +142,7 @@ $pdo = null;
             font-weight: 500;
             border-radius: 50px;
             transition: all 0.3s ease;
-            padding: 0.5rem 1rem; 
+            padding: 0.5rem 1rem;
             font-size: 0.9rem;
             min-width: 120px;
         }
@@ -165,7 +155,7 @@ $pdo = null;
 
         .contact-info-line {
             display: flex;
-            gap: 1.5rem; 
+            gap: 1.5rem;
             margin-top: 1rem;
             flex-wrap: wrap;
         }
@@ -178,28 +168,34 @@ $pdo = null;
         }
 
         .contact-item-inline i {
-            color: var(--sage); /* UPDATED */
+            color: var(--sage);
+            /* UPDATED */
             margin-right: 0.4rem;
         }
+
         .contact-item-inline a {
             color: var(--dark-text);
             text-decoration: none;
         }
 
         .modal-content {
-             border-color: var(--border-color);
-             background-color: var(--bg); /* Match body bg */
+            border-color: var(--border-color);
+            background-color: var(--bg);
+            /* Match body bg */
         }
+
         .contact-item {
-            background-color: #f8f9fa; 
+            background-color: #f8f9fa;
             border: 1px solid #dee2e6;
         }
 
         .form-control:focus {
-            border-color: var(--sage); /* UPDATED */
-            box-shadow: 0 0 0 0.25rem rgba(16, 185, 129, 0.25); /* UPDATED */
+            border-color: var(--sage);
+            /* UPDATED */
+            box-shadow: 0 0 0 0.25rem rgba(16, 185, 129, 0.25);
+            /* UPDATED */
         }
-        
+
         /* NEW: Footer Style */
         footer {
             background-color: var(--sage-dark);
@@ -208,142 +204,158 @@ $pdo = null;
             font-size: 0.9rem;
             margin-top: 4rem;
         }
-
     </style>
 </head>
+
 <body>
-
-    <div class="container mt-4">
-        <a href="dashboard.php" class="back-btn-top">
-            <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
-        </a>
-    </div>
-
-    <div class="container main-container py-5">
-
-        <div class="text-center mb-5 page-header">
-            <h1 class="fw-bold"><i class="fas fa-briefcase me-2"></i>Job Opportunities</h1>
-            <p class="text-muted">Discover exciting career opportunities shared within the AgoraBoard community.</p>
+    <div class="d-flex flex-column min-vh-100">
+        <div class="container mt-4">
+            <a href="dashboard.php" class="back-btn-top">
+                <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+            </a>
         </div>
 
-        <div class="input-group input-group-lg mb-4 shadow-sm">
-            <span class="input-group-text bg-white" style="border-color: var(--border-color);"><i class="fas fa-search search-icon"></i></span>
-            <input type="text" class="form-control" placeholder="Search by job title, employer, or keyword..." style="border-color: var(--border-color);">
-        </div>
+        <div class="container main-container py-5">
 
-        <p class="text-muted mb-4"><?php echo $jobCount; ?> jobs found</p>
-
-        <div class="job-listings">
-            <?php foreach ($jobs as $job): ?>
-            <?php
-                // Process Data For Display
-                $full_desc = htmlspecialchars($job['description']);
-                // Use nl2br to preserve line breaks in the modal
-                $full_desc_modal = nl2br(htmlspecialchars($job['description']));
-                
-                $short_desc = strlen($full_desc) > 120 ? substr($full_desc, 0, 120) . '...' : $full_desc;
-                $post_date = date('F j, Y', strtotime($job['created_at']));
-                
-                // Parse contact info (always needs two parts, even if one is empty)
-                $contact_parts = array_pad(array_map('trim', explode(',', $job['contact_info'])), 2, '');
-                $email = $contact_parts[0];
-                $phone = $contact_parts[1];
-            ?>
-            
-            <div class="job-card p-4 mb-3">
-                <div class="d-flex justify-content-between align-items-start">
-                    
-                    <div class="flex-grow-1 me-4">
-                        <h4 class="fw-bold mb-1"><?php echo htmlspecialchars($job['title']); ?></h4>
-                        
-                        <div class="job-meta d-flex align-items-center flex-wrap mb-3" style="gap: 1rem;">
-                            <span class="d-flex align-items-center"><i class="far fa-building me-1"></i><?php echo htmlspecialchars($job['employer']); ?></span>
-                            <span class="d-flex align-items-center"><i class="fas fa-user me-1"></i>Posted by <?php echo htmlspecialchars($job['posted_by']); ?></span>
-                            <span class="d-flex align-items-center"><i class="fas fa-calendar-alt me-1"></i><?php echo htmlspecialchars($post_date); ?></span>
-                        </div>
-                        
-                        <p class="text-secondary mb-3"><?php echo $short_desc; // short_desc is already escaped ?></p>
-                        
-                        <div class="contact-info-line">
-                            <?php if (!empty($email)): ?>
-                                <div class="contact-item-inline">
-                                    <i class="fas fa-envelope"></i>
-                                    <a href="mailto:<?php echo htmlspecialchars($email); ?>"><?php echo htmlspecialchars($email); ?></a>
-                                    <i class="far fa-copy ms-2 text-muted" style="cursor: pointer;" onclick="copyToClipboard('<?php echo htmlspecialchars($email); ?>', this)"></i>
-                                </div>
-                            <?php endif; ?>
-
-                            <?php if (!empty($phone)): ?>
-                                <div class="contact-item-inline">
-                                    <i class="fas fa-phone"></i>
-                                    <a href="tel:<?php echo htmlspecialchars($phone); ?>"><?php echo htmlspecialchars($phone); ?></a>
-                                    <i class="far fa-copy ms-2 text-muted" style="cursor: pointer;" onclick="copyToClipboard('<?php echo htmlspecialchars($phone); ?>', this)"></i>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    
-                    <div class="flex-shrink-0">
-                        <button class="btn btn-gradient" 
-                                data-bs-toggle="modal" 
-                                data-bs-target="#jobDetailModal"
-                                data-title="<?php echo htmlspecialchars($job['title']); ?>"
-                                data-company="<?php echo htmlspecialchars($job['employer']); ?>"
-                                data-posted-by="<?php echo htmlspecialchars($job['posted_by']); ?>"
-                                data-date="<?php echo htmlspecialchars($post_date); ?>"
-                                data-long-desc="<?php echo $full_desc_modal; // Use nl2br version ?>"
-                                data-email="<?php echo htmlspecialchars($email); ?>"
-                                data-phone="<?php echo htmlspecialchars($phone); ?>">
-                            <i class="fas fa-eye me-1"></i> View Details
-                        </button>
-                    </div>
-                </div>
+            <div class="text-center mb-5 page-header">
+                <h1 class="fw-bold"><i class="fas fa-briefcase me-2"></i>Job Opportunities</h1>
+                <p class="text-muted">Discover exciting career opportunities shared within the AgoraBoard community.</p>
             </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
 
-    <footer class="text-center">
-        &copy; 2025 AgoraBoard — Job Opportunities & Community Bulletin
-    </footer>
+            <form method="GET" class="mb-4">
+                <div class="input-group input-group-lg shadow-sm">
+                    <span class="input-group-text bg-white" style="border-color: var(--border-color);">
+                        <i class="fas fa-search search-icon"></i>
+                    </span>
+                    <input type="text" class="form-control" name="search"
+                        placeholder="Search by job title, employer, or keyword..."
+                        value="<?php echo htmlspecialchars($searchQuery); ?>"
+                        style="border-color: var(--border-color);">
+                    <button class="btn btn-gradient" type="submit">Search</button>
+                </div>
+            </form>
 
-    <div class="modal fade" id="jobDetailModal" tabindex="-1" aria-labelledby="jobDetailModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <div>
-                        <h4 class="modal-title fw-bold" id="modal-title">Job Title Here</h4>
-                        <div class="job-meta d-flex align-items-center flex-wrap" style="gap: 1rem;">
-                            <span class="d-flex align-items-center" id="modal-company"><i class="far fa-building me-1"></i>Company</span>
-                            <span class="d-flex align-items-center" id="modal-posted-by"><i class="fas fa-user me-1"></i>Posted by</span>
-                            <span class="d-flex align-items-center" id="modal-date"><i class="fas fa-calendar-alt me-1"></i>Date</span>
+            <p class="text-muted mb-4"><?php echo $jobCount; ?> jobs found</p>
+
+            <div class="job-listings">
+                <?php foreach ($jobs as $job): ?>
+                    <?php
+                    // Process Data For Display
+                    $full_desc = htmlspecialchars($job['description']);
+                    // Use nl2br to preserve line breaks in the modal
+                    $full_desc_modal = nl2br(htmlspecialchars($job['description']));
+
+                    $short_desc = strlen($full_desc) > 120 ? substr($full_desc, 0, 120) . '...' : $full_desc;
+                    $post_date = date('F j, Y', strtotime($job['created_at']));
+
+                    // Parse contact info safely
+                    $contact_parts = array_map('trim', explode(',', $job['contact_info'] ?? ''));
+
+                    // Assign only if exists
+                    $email = !empty($contact_parts[0]) ? $contact_parts[0] : '';
+                    $phone = !empty($contact_parts[1]) ? $contact_parts[1] : '';
+
+                    ?>
+
+                    <div class="job-card p-4 mb-3">
+                        <div class="d-flex justify-content-between align-items-start">
+
+                            <div class="flex-grow-1 me-4">
+                                <h4 class="fw-bold mb-1"><?php echo htmlspecialchars($job['title']); ?></h4>
+
+                                <div class="job-meta d-flex align-items-center flex-wrap mb-3" style="gap: 1rem;">
+                                    <span class="d-flex align-items-center"><i class="far fa-building me-1"></i><?php echo htmlspecialchars($job['employer']); ?></span>
+                                    <span class="d-flex align-items-center"><i class="fas fa-user me-1"></i>Posted by <?php echo htmlspecialchars($job['posted_by']); ?></span>
+                                    <span class="d-flex align-items-center"><i class="fas fa-calendar-alt me-1"></i><?php echo htmlspecialchars($post_date); ?></span>
+                                </div>
+
+                                <p class="text-secondary mb-3"><?php echo $short_desc; // short_desc is already escaped 
+                                                                ?></p>
+
+                                <div class="contact-info-line">
+                                    <?php if (!empty($email)): ?>
+                                        <div class="contact-item-inline">
+                                            <i class="fas fa-envelope"></i>
+                                            <a href="mailto:<?php echo htmlspecialchars($email); ?>"><?php echo htmlspecialchars($email); ?></a>
+                                            <i class="far fa-copy ms-2 text-muted" style="cursor: pointer;"
+                                                onclick="copyToClipboard('<?php echo htmlspecialchars($email); ?>', this)"></i>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <?php if (!empty($phone)): ?>
+                                        <div class="contact-item-inline">
+                                            <i class="fas fa-phone"></i>
+                                            <a href="tel:<?php echo htmlspecialchars($phone); ?>"><?php echo htmlspecialchars($phone); ?></a>
+                                            <i class="far fa-copy ms-2 text-muted" style="cursor: pointer;"
+                                                onclick="copyToClipboard('<?php echo htmlspecialchars($phone); ?>', this)"></i>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+
+                            <div class="flex-shrink-0">
+                                <button class="btn btn-gradient"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#jobDetailModal"
+                                    data-title="<?php echo htmlspecialchars($job['title']); ?>"
+                                    data-company="<?php echo htmlspecialchars($job['employer']); ?>"
+                                    data-posted-by="<?php echo htmlspecialchars($job['posted_by']); ?>"
+                                    data-date="<?php echo htmlspecialchars($post_date); ?>"
+                                    data-long-desc="<?php echo $full_desc_modal; // Use nl2br version 
+                                                    ?>"
+                                    data-email="<?php echo htmlspecialchars($email); ?>"
+                                    data-phone="<?php echo htmlspecialchars($phone); ?>">
+                                    <i class="fas fa-eye me-1"></i> View Details
+                                </button>
+                            </div>
                         </div>
                     </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body px-4 py-4">
-                    <h5 class="fw-bold">Job Description</h5>
-                    <p id="modal-long-desc" class="text-secondary" style="white-space: pre-wrap;">Full job description goes here.</p>
-                    
-                    <h5 class="fw-bold mt-4">Contact Information</h5>
-                    <div class="d-flex flex-column gap-2">
-                        <div class="contact-item p-3 rounded d-flex justify-content-between align-items-center" id="modal-email-container">
-                            <div>
-                               <i class="fas fa-envelope me-2 text-muted"></i>
-                               <span id="modal-email">email@example.com</span>
+                <?php endforeach; ?>
+            </div>
+        </div>
+
+        <footer class="text-center">
+            &copy; 2025 AgoraBoard — Job Opportunities & Community Bulletin
+        </footer>
+
+        <div class="modal fade" id="jobDetailModal" tabindex="-1" aria-labelledby="jobDetailModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div>
+                            <h4 class="modal-title fw-bold" id="modal-title">Job Title Here</h4>
+                            <div class="job-meta d-flex align-items-center flex-wrap" style="gap: 1rem;">
+                                <span class="d-flex align-items-center" id="modal-company"><i class="far fa-building me-1"></i>Company</span>
+                                <span class="d-flex align-items-center" id="modal-posted-by"><i class="fas fa-user me-1"></i>Posted by</span>
+                                <span class="d-flex align-items-center" id="modal-date"><i class="fas fa-calendar-alt me-1"></i>Date</span>
                             </div>
-                            <button class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#modal-email">
-                                <i class="far fa-copy me-1"></i> Copy
-                            </button>
                         </div>
-                        <div class="contact-item p-3 rounded d-flex justify-content-between align-items-center" id="modal-phone-container">
-                             <div>
-                                <i class="fas fa-phone me-2 text-muted"></i>
-                                <span id="modal-phone">+12 345 678 90</span>
-                             </div>
-                            <button class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#modal-phone">
-                                <i class="far fa-copy me-1"></i> Copy
-                            </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body px-4 py-4">
+                        <h5 class="fw-bold">Job Description</h5>
+                        <p id="modal-long-desc" class="text-secondary" style="white-space: pre-wrap;">Full job description goes here.</p>
+
+                        <h5 class="fw-bold mt-4">Contact Information</h5>
+                        <div class="d-flex flex-column gap-2">
+                            <div class="contact-item p-3 rounded d-flex justify-content-between align-items-center" id="modal-email-container">
+                                <div>
+                                    <i class="fas fa-envelope me-2 text-muted"></i>
+                                    <span id="modal-email">email@example.com</span>
+                                </div>
+                                <button class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#modal-email">
+                                    <i class="far fa-copy me-1"></i> Copy
+                                </button>
+                            </div>
+                            <div class="contact-item p-3 rounded d-flex justify-content-between align-items-center" id="modal-phone-container">
+                                <div>
+                                    <i class="fas fa-phone me-2 text-muted"></i>
+                                    <span id="modal-phone">+12 345 678 90</span>
+                                </div>
+                                <button class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#modal-phone">
+                                    <i class="far fa-copy me-1"></i> Copy
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -358,7 +370,7 @@ $pdo = null;
             navigator.clipboard.writeText(text).then(() => {
                 const originalContent = element.innerHTML;
                 element.innerHTML = '<i class="fas fa-check"></i>';
-                element.classList.add('text-success'); 
+                element.classList.add('text-success');
                 element.style.cursor = 'default';
 
                 setTimeout(() => {
@@ -370,43 +382,43 @@ $pdo = null;
                 console.error('Failed to copy: ', err);
             });
         }
-        
+
         // Modal functionality
-        document.addEventListener('DOMContentLoaded', function () {
+        document.addEventListener('DOMContentLoaded', function() {
             const jobDetailModal = document.getElementById('jobDetailModal');
-            
-            jobDetailModal.addEventListener('show.bs.modal', function (event) {
+
+            jobDetailModal.addEventListener('show.bs.modal', function(event) {
                 const button = event.relatedTarget;
                 const title = button.getAttribute('data-title');
                 const company = button.getAttribute('data-company');
                 const postedBy = button.getAttribute('data-posted-by');
                 const date = button.getAttribute('data-date');
                 const longDesc = button.getAttribute('data-long-desc');
-                const email = button.getAttribute('data-email');
-                const phone = button.getAttribute('data-phone');
+                const email = button.getAttribute('data-email') || '';
+                const phone = button.getAttribute('data-phone') || '';
 
                 jobDetailModal.querySelector('#modal-title').textContent = title;
                 jobDetailModal.querySelector('#modal-company').innerHTML = `<i class="far fa-building me-1"></i>${company}`;
                 jobDetailModal.querySelector('#modal-posted-by').innerHTML = `<i class="fas fa-user me-1"></i>Posted by ${postedBy}`;
                 jobDetailModal.querySelector('#modal-date').innerHTML = `<i class="fas fa-calendar-alt me-1"></i>${date}`;
-                
+
                 // Use .innerHTML to render the <br> tags
-                jobDetailModal.querySelector('#modal-long-desc').innerHTML = longDesc; 
-                
+                jobDetailModal.querySelector('#modal-long-desc').innerHTML = longDesc;
+
                 const emailEl = jobDetailModal.querySelector('#modal-email');
                 const phoneEl = jobDetailModal.querySelector('#modal-phone');
                 const emailContainer = jobDetailModal.querySelector('#modal-email-container');
                 const phoneContainer = jobDetailModal.querySelector('#modal-phone-container');
 
                 if (email) {
-                    emailEl.textContent = email;
+                    jobDetailModal.querySelector('#modal-email').textContent = email;
                     emailContainer.style.display = 'flex';
                 } else {
                     emailContainer.style.display = 'none';
                 }
 
                 if (phone) {
-                    phoneEl.textContent = phone;
+                    jobDetailModal.querySelector('#modal-phone').textContent = phone;
                     phoneContainer.style.display = 'flex';
                 } else {
                     phoneContainer.style.display = 'none';
@@ -419,13 +431,13 @@ $pdo = null;
                 btn.addEventListener('click', function() {
                     const targetSelector = this.getAttribute('data-copy-target');
                     const textToCopy = jobDetailModal.querySelector(targetSelector).innerText;
-                    
+
                     navigator.clipboard.writeText(textToCopy).then(() => {
                         const originalText = this.innerHTML;
                         this.innerHTML = '<i class="fas fa-check me-1"></i> Copied!';
                         this.classList.add('btn-success');
                         this.classList.remove('btn-outline-secondary', 'copy-btn');
-                        
+
                         setTimeout(() => {
                             this.innerHTML = originalText;
                             this.classList.remove('btn-success');
@@ -439,4 +451,5 @@ $pdo = null;
         });
     </script>
 </body>
+
 </html>
